@@ -1,0 +1,62 @@
+{
+  "tests": 10,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "OutputWriter",
+      "tests": 10,
+      "testsuite": [
+        {
+          "name": "JSONContainsRequiredFields",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_output.cpp",
+          "line": 44
+        },
+        {
+          "name": "JSONContainsEnergyComponents",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_output.cpp",
+          "line": 59
+        },
+        {
+          "name": "JSONIsValid",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_output.cpp",
+          "line": 71
+        },
+        {
+          "name": "JSONContainsCalculationType",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_output.cpp",
+          "line": 99
+        },
+        {
+          "name": "WriteJSONToFile",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_output.cpp",
+          "line": 111
+        },
+        {
+          "name": "AtomicWriteNoPartialOutput",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_output.cpp",
+          "line": 136
+        },
+        {
+          "name": "NonConvergedOutput",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_output.cpp",
+          "line": 165
+        },
+        {
+          "name": "JSONContainsForces",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_output.cpp",
+          "line": 181
+        },
+        {
+          "name": "JSONContainsCrystalInfo",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_output.cpp",
+          "line": 194
+        },
+        {
+          "name": "JSONContainsFermiEnergy",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_output.cpp",
+          "line": 209
+        }
+      ]
+    }
+  ]
+}

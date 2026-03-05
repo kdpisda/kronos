@@ -1,0 +1,140 @@
+{
+  "tests": 16,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "GPU",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "CUDABackendOffloading",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 12
+        },
+        {
+          "name": "HIPBackendOffloading",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 16
+        },
+        {
+          "name": "GPUFallbackOnOOM",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 20
+        }
+      ]
+    },
+    {
+      "name": "MPI",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "KPointParallelization",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 28
+        },
+        {
+          "name": "BandParallelization",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 32
+        }
+      ]
+    },
+    {
+      "name": "PAW",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "OneCenterEnergy",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 40
+        },
+        {
+          "name": "AugmentationCharges",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 44
+        }
+      ]
+    },
+    {
+      "name": "Python",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "Pybind11Interface",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 52
+        }
+      ]
+    },
+    {
+      "name": "Spin",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "CollinearLSDA",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 60
+        },
+        {
+          "name": "NonCollinear",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 64
+        }
+      ]
+    },
+    {
+      "name": "Checkpoint",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "WriteAndRestart",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 72
+        }
+      ]
+    },
+    {
+      "name": "Stress",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "StressTensorComputation",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 80
+        }
+      ]
+    },
+    {
+      "name": "LOBPCG",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "BasicConvergence",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 88
+        },
+        {
+          "name": "DavidsonFallback",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 92
+        }
+      ]
+    },
+    {
+      "name": "Hybrid",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "HSE06",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 100
+        },
+        {
+          "name": "PBE0",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_unimplemented.cpp",
+          "line": 104
+        }
+      ]
+    }
+  ]
+}

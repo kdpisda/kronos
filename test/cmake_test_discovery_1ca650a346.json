@@ -1,0 +1,98 @@
+{
+  "tests": 16,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "BandStructure",
+      "tests": 7,
+      "testsuite": [
+        {
+          "name": "GenerateKPathSC",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 26
+        },
+        {
+          "name": "GenerateKPathFCC",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 48
+        },
+        {
+          "name": "CustomPath",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 58
+        },
+        {
+          "name": "FreeElectronBands",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 80
+        },
+        {
+          "name": "BandCountMatchesNbands",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 131
+        },
+        {
+          "name": "WriteBandsGnuplot",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 173
+        },
+        {
+          "name": "DefaultPathsExist",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 206
+        }
+      ]
+    },
+    {
+      "name": "DOS",
+      "tests": 9,
+      "testsuite": [
+        {
+          "name": "BasicComputation",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 222
+        },
+        {
+          "name": "IntegratesToNElectrons",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 248
+        },
+        {
+          "name": "IntegratedDOSMonotonic",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 268
+        },
+        {
+          "name": "FermiLevelInGapForInsulator",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 285
+        },
+        {
+          "name": "MultipleKPoints",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 305
+        },
+        {
+          "name": "FermiDiracSmearing",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 323
+        },
+        {
+          "name": "WriteDOSFile",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 344
+        },
+        {
+          "name": "SmearingNoneFallback",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 375
+        },
+        {
+          "name": "MVSmearing",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_postprocessing.cpp",
+          "line": 394
+        }
+      ]
+    }
+  ]
+}

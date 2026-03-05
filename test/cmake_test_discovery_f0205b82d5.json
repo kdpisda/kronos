@@ -1,0 +1,113 @@
+{
+  "tests": 19,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "Crystal",
+      "tests": 15,
+      "testsuite": [
+        {
+          "name": "CubicLatticeConstruction",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 18
+        },
+        {
+          "name": "DiamondLatticeConstruction",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 25
+        },
+        {
+          "name": "CubicVolumeCorrect",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 39
+        },
+        {
+          "name": "FCCVolumeCorrect",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 47
+        },
+        {
+          "name": "VolumeIsPositive",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 56
+        },
+        {
+          "name": "FracToCartRoundtrip",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 65
+        },
+        {
+          "name": "CartToFracRoundtrip",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 77
+        },
+        {
+          "name": "OriginMapsToZero",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 90
+        },
+        {
+          "name": "NaClHasEightAtoms",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 103
+        },
+        {
+          "name": "AtomAccessBoundsChecked",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 108
+        },
+        {
+          "name": "TotalElectrons",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 115
+        },
+        {
+          "name": "ReciprocalLatticeOrthogonal",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 125
+        },
+        {
+          "name": "ReciprocalLatticeForFCC",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 145
+        },
+        {
+          "name": "TriclinicCell",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 166
+        },
+        {
+          "name": "LatticeBohrvAngstrom",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 195
+        }
+      ]
+    },
+    {
+      "name": "ElementData",
+      "tests": 4,
+      "testsuite": [
+        {
+          "name": "AtomicNumberFromSymbol",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 213
+        },
+        {
+          "name": "SymbolFromAtomicNumber",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 220
+        },
+        {
+          "name": "InvalidSymbolThrows",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 226
+        },
+        {
+          "name": "InvalidAtomicNumberThrows",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_crystal.cpp",
+          "line": 230
+        }
+      ]
+    }
+  ]
+}

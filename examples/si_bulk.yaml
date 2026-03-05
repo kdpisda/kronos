@@ -1,0 +1,24 @@
+system:
+  lattice: [[5.43, 0, 0], [0, 5.43, 0], [0, 0, 5.43]]
+  atoms:
+    - {symbol: Si, position: [0.0, 0.0, 0.0]}
+    - {symbol: Si, position: [0.25, 0.25, 0.25]}
+calculation:
+  type: scf
+  ecutwfc: 60.0
+  ecutrho: 240.0
+  kpoints: [8, 8, 8, 0, 0, 0]
+  xc: PBE
+  smearing: marzari-vanderbilt
+  degauss: 0.01
+  spin: false
+pseudopotentials:
+  Si: Si.ONCVPSP.upf
+convergence:
+  energy: 1e-8
+  density: 1e-9
+  max_scf_steps: 100
+hardware:
+  use_gpu: true
+  gpu_backend: cuda
+  mpi_tasks: 4

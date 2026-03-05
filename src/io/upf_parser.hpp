@@ -1,0 +1,82 @@
+#pragma once
+#include "core/types.hpp"
+#include <string>
+#include <vector>
+#include <stdexcept>
+
+namespace kronos {
+
+class UPFParseError : public std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+
+// Radial grid for pseudopotential data
+struct RadialGrid {
+    int npoints{0};
+    std::vector<double> r;      // radial points
+    std::vector<double> rab;    // dr for integration: integral = sum(f*rab)
+};
+
+// Beta projector for non-local PP
+struct BetaProjector {
+    int index{0};
+    int angular_momentum{0};     // l quantum number
+    int cutoff_index{0};         // index beyond which beta=0
+    std::vector<double> values;  // beta(r) on radial grid
+};
+
+// Atomic wavefunction (for initial density guess)
+struct AtomicWavefunction {
+    int angular_momentum{0};
+    double occupation{0.0};
+    std::string label;
+    std::vector<double> values;  // chi(r) on radial grid
+};
+
+// Complete pseudopotential data
+struct PseudoPotential {
+    // Header info
+    std::string element;
+    int atomic_number{0};
+    double z_valence{0.0};       // number of valence electrons
+    std::string pp_type;         // "NC" for norm-conserving, "US" for ultrasoft, "PAW"
+    bool is_norm_conserving{false};
+    bool is_ultrasoft{false};
+    bool is_paw{false};
+    std::string xc_functional;
+    double total_psenergy{0.0};  // total pseudo-energy
+    double wfc_cutoff{0.0};      // suggested wavefunction cutoff (Ry)
+    double rho_cutoff{0.0};      // suggested density cutoff (Ry)
+    int lmax{0};                  // max angular momentum
+    int num_projectors{0};        // number of beta projectors
+    int num_wfc{0};               // number of atomic wavefunctions
+
+    // Radial grid
+    RadialGrid mesh;
+
+    // Local potential V_loc(r) in Ry
+    std::vector<double> vloc;
+
+    // Beta projectors for non-local part
+    std::vector<BetaProjector> betas;
+
+    // D_ij matrix (num_projectors x num_projectors)
+    // V_NL = sum_ij D_ij |beta_i><beta_j|
+    std::vector<std::vector<double>> dij;
+
+    // Atomic charge density rho_atom(r) (for initial guess)
+    std::vector<double> rho_atomic;
+
+    // Atomic wavefunctions (for initial density)
+    std::vector<AtomicWavefunction> atomic_wfc;
+};
+
+// Parse a UPF v2 pseudopotential file
+// Throws UPFParseError on parse failure with file path and description
+PseudoPotential parse_upf(const std::string& filepath);
+
+// Validate the loaded PP: check norm conservation, z_valence > 0, etc.
+// Throws UPFParseError if validation fails
+void validate_pseudopotential(const PseudoPotential& pp);
+
+} // namespace kronos

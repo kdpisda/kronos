@@ -1,0 +1,132 @@
+{
+  "tests": 24,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "UPFParser",
+      "tests": 24,
+      "testsuite": [
+        {
+          "name": "ParseDoublesBasic",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 30
+        },
+        {
+          "name": "ParseDoublesWithNewlines",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 38
+        },
+        {
+          "name": "ParseDoublesFortranExponent",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 47
+        },
+        {
+          "name": "ParseDoublesEmptyString",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 56
+        },
+        {
+          "name": "ParseDoublesWhitespaceOnly",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 61
+        },
+        {
+          "name": "ExtractAttributeDoubleQuoted",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 70
+        },
+        {
+          "name": "ExtractAttributeCaseInsensitive",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 77
+        },
+        {
+          "name": "ExtractAttributeNotFound",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 83
+        },
+        {
+          "name": "ExtractAttributeWithSpacesAroundEquals",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 88
+        },
+        {
+          "name": "ThrowsOnMissingFile",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 97
+        },
+        {
+          "name": "ThrowsOnMissingFileMessage",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 104
+        },
+        {
+          "name": "ValidateRejectsZeroValence",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 121
+        },
+        {
+          "name": "ValidateRejectsNegativeValence",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 135
+        },
+        {
+          "name": "ValidateRejectsEmptyMesh",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 149
+        },
+        {
+          "name": "ValidateRejectsMismatchedRandRAB",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 161
+        },
+        {
+          "name": "ValidateRejectsVlocSizeMismatch",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 175
+        },
+        {
+          "name": "ValidateAcceptsValidNCPP",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 190
+        },
+        {
+          "name": "RejectsTruncatedFile",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 213
+        },
+        {
+          "name": "RejectsEmptyFile",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 230
+        },
+        {
+          "name": "ExtractsCorrectZValence",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 247
+        },
+        {
+          "name": "RadialGridMonotonic",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 266
+        },
+        {
+          "name": "ParsesMultipleProjectors",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 315
+        },
+        {
+          "name": "AcceptsFractionalZValence",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 363
+        },
+        {
+          "name": "ParseSyntheticUPF",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_upf.cpp",
+          "line": 381
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,157 @@
+{
+  "tests": 29,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "InputParser",
+      "tests": 29,
+      "testsuite": [
+        {
+          "name": "ParsesSiBulk",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 9
+        },
+        {
+          "name": "RejectsLowCutoff",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 75
+        },
+        {
+          "name": "RejectsNegativeDeterminant",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 95
+        },
+        {
+          "name": "AutoSetsEcutrho",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 116
+        },
+        {
+          "name": "RejectsUnknownKeys",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 137
+        },
+        {
+          "name": "RejectsEcutrhoTooSmall",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 160
+        },
+        {
+          "name": "RejectsEcutwfcTooHigh",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 182
+        },
+        {
+          "name": "RejectsMissingSystem",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 203
+        },
+        {
+          "name": "RejectsMissingCalculation",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 215
+        },
+        {
+          "name": "RejectsMissingAtoms",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 227
+        },
+        {
+          "name": "RejectsMissingLattice",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 241
+        },
+        {
+          "name": "RejectsMissingEcutwfc",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 256
+        },
+        {
+          "name": "RejectsEmptyInput",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 275
+        },
+        {
+          "name": "RejectsMalformedYAML",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 279
+        },
+        {
+          "name": "ParsesRelaxType",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 291
+        },
+        {
+          "name": "ParsesBandsType",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 308
+        },
+        {
+          "name": "ParsesDOSType",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 325
+        },
+        {
+          "name": "ParsesGaussianSmearing",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 346
+        },
+        {
+          "name": "ParsesFermiDiracSmearing",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 366
+        },
+        {
+          "name": "ParsesLDAFunctional",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 389
+        },
+        {
+          "name": "ParsesKPointsWithShift",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 410
+        },
+        {
+          "name": "ParsesSpinTrue",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 437
+        },
+        {
+          "name": "ParsesConvergenceParams",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 459
+        },
+        {
+          "name": "RejectsUnknownTopLevelKey2",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 486
+        },
+        {
+          "name": "ParsesMultipleAtoms",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 509
+        },
+        {
+          "name": "DefaultHardwareParams",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 534
+        },
+        {
+          "name": "AcceptsEcutrhoExact4x",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 557
+        },
+        {
+          "name": "AcceptsLargeEcutrho",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 580
+        },
+        {
+          "name": "ParsesMultiplePseudopotentials",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_input.cpp",
+          "line": 603
+        }
+      ]
+    }
+  ]
+}

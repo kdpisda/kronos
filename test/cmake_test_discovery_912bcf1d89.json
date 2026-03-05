@@ -1,0 +1,211 @@
+{
+  "tests": 29,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "SphericalHarmonics",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "Y00IsConstant",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 84
+        },
+        {
+          "name": "Y1mOrthogonality",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 93
+        },
+        {
+          "name": "Y2mOrthogonality",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 133
+        },
+        {
+          "name": "Y2mSelfOrthogonality",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 388
+        },
+        {
+          "name": "ZeroVectorOnlyL0",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 427
+        }
+      ]
+    },
+    {
+      "name": "KPointGenerator",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "GammaOnly",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 162
+        },
+        {
+          "name": "TwoByTwoByTwo",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 177
+        },
+        {
+          "name": "FourByFourByFour",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 198
+        },
+        {
+          "name": "ShiftedGrid",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 217
+        },
+        {
+          "name": "WeightsSumToOneVariousGrids",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 494
+        }
+      ]
+    },
+    {
+      "name": "FFTGrid",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "GridSizedForEcutrho",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 256
+        }
+      ]
+    },
+    {
+      "name": "Ewald",
+      "tests": 5,
+      "testsuite": [
+        {
+          "name": "NaClMadelungConstant",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 284
+        },
+        {
+          "name": "DisplacedAtomHasForce",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 337
+        },
+        {
+          "name": "NaClEnergyIsNegative",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 522
+        },
+        {
+          "name": "SameChargesPositiveEnergy",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 570
+        },
+        {
+          "name": "SingleAtomEnergy",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 790
+        }
+      ]
+    },
+    {
+      "name": "FermiSolver",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "MarzariVanderbiltSmearing",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 364
+        },
+        {
+          "name": "FermiDiracSmearing",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 446
+        },
+        {
+          "name": "GaussianSmearing",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 473
+        }
+      ]
+    },
+    {
+      "name": "PlaneWaveBasis",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "KineticEnergiesMonotone",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 546
+        }
+      ]
+    },
+    {
+      "name": "HartreeEnergy",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "SelfEnergyPositive",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 591
+        },
+        {
+          "name": "GZeroComponentZero",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 625
+        }
+      ]
+    },
+    {
+      "name": "XCFunctional",
+      "tests": 4,
+      "testsuite": [
+        {
+          "name": "PBEIsGGA",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 650
+        },
+        {
+          "name": "PBEEvaluateGGA",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 658
+        },
+        {
+          "name": "NameReturned",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 675
+        },
+        {
+          "name": "EnergyNegativeForPositiveDensity",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 687
+        }
+      ]
+    },
+    {
+      "name": "LocalPP",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "VlocGIsFinite",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 707
+        },
+        {
+          "name": "EnergyFiniteForUniformDensity",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 726
+        }
+      ]
+    },
+    {
+      "name": "TotalEnergy",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "NegativeForBoundSystem",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_physics.cpp",
+          "line": 759
+        }
+      ]
+    }
+  ]
+}

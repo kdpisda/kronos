@@ -1,0 +1,68 @@
+{
+  "tests": 10,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "Forces",
+      "tests": 7,
+      "testsuite": [
+        {
+          "name": "NewtonsThirdLawEwald",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_forces.cpp",
+          "line": 22
+        },
+        {
+          "name": "EquilibriumZeroForces",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_forces.cpp",
+          "line": 36
+        },
+        {
+          "name": "DisplacedAtomNonzeroForce",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_forces.cpp",
+          "line": 51
+        },
+        {
+          "name": "NewtonsThirdLawMultiAtom",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_forces.cpp",
+          "line": 74
+        },
+        {
+          "name": "SCFForceSumToZero",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_forces.cpp",
+          "line": 97
+        },
+        {
+          "name": "TotalForcesComputation",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_forces.cpp",
+          "line": 130
+        },
+        {
+          "name": "EwaldForceFiniteDifference",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_forces.cpp",
+          "line": 214
+        }
+      ]
+    },
+    {
+      "name": "BFGS",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "DefaultParamsReasonable",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_forces.cpp",
+          "line": 151
+        },
+        {
+          "name": "ConstructsWithCustomParams",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_forces.cpp",
+          "line": 161
+        },
+        {
+          "name": "OptimizeDisplacedSiDiamond",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_forces.cpp",
+          "line": 170
+        }
+      ]
+    }
+  ]
+}

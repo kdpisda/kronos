@@ -1,0 +1,72 @@
+{
+  "tests": 12,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "Hamiltonian",
+      "tests": 12,
+      "testsuite": [
+        {
+          "name": "KineticOnlySinglePlaneWave",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
+          "line": 74
+        },
+        {
+          "name": "KineticOnlyNonzeroK",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
+          "line": 92
+        },
+        {
+          "name": "LocalPotentialContribution",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
+          "line": 112
+        },
+        {
+          "name": "Hermiticity",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
+          "line": 149
+        },
+        {
+          "name": "HermiticityWithPotential",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
+          "line": 170
+        },
+        {
+          "name": "Linearity",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
+          "line": 212
+        },
+        {
+          "name": "KineticDiagonalMatchesBasisKinetic",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
+          "line": 249
+        },
+        {
+          "name": "OutputSizeMatchesInput",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
+          "line": 265
+        },
+        {
+          "name": "RayleighQuotientNonNegative",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
+          "line": 280
+        },
+        {
+          "name": "NonlocalPPChangesEigenvalues",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
+          "line": 304
+        },
+        {
+          "name": "ZeroInputGivesZeroOutput",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
+          "line": 366
+        },
+        {
+          "name": "ScalingProperty",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
+          "line": 383
+        }
+      ]
+    }
+  ]
+}
