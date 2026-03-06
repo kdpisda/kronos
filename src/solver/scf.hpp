@@ -42,6 +42,12 @@ struct SCFResult {
     // Per-k-point eigenvalues (Ry)
     std::vector<std::vector<double>> eigenvalues;
 
+    // Spin-polarized results (nspin=2)
+    double total_magnetization{0.0};     // n_up - n_dn integrated
+    double absolute_magnetization{0.0};  // |n_up - n_dn| integrated
+    // Per-spin eigenvalues: eigenvalues_spin[ispin][ik][ib]
+    std::vector<std::vector<std::vector<double>>> eigenvalues_spin;
+
     // Converged effective potential V_eff(r) on real-space grid
     // (used by band structure calculations)
     std::vector<complex_t> converged_veff_r;

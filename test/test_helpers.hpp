@@ -269,4 +269,193 @@ inline PseudoPotential make_h_pseudopotential(int npts = 500, double rmax = 10.0
     return pp;
 }
 
+// ============================================================================
+// Generic analytic pseudopotential helper
+// ============================================================================
+
+/// Generic analytic PP: V_loc(r) = -2*z_val*erf(r/r_loc)/r (Ry units)
+inline PseudoPotential make_analytic_pp(const std::string& element, int Z,
+                                         double z_val, double r_loc = 0.5,
+                                         int npts = 500, double rmax = 10.0) {
+    PseudoPotential pp;
+    pp.element = element;
+    pp.atomic_number = Z;
+    pp.z_valence = z_val;
+    pp.pp_type = "NC";
+    pp.is_norm_conserving = true;
+    pp.is_ultrasoft = false;
+    pp.is_paw = false;
+    pp.xc_functional = "LDA_PZ";
+    pp.lmax = 0;
+    pp.num_projectors = 0;
+    pp.num_wfc = 0;
+
+    pp.mesh.npoints = npts;
+    pp.mesh.r.resize(npts);
+    pp.mesh.rab.resize(npts);
+    pp.vloc.resize(npts);
+
+    double dr = rmax / (npts - 1);
+    for (int i = 0; i < npts; ++i) {
+        double r = i * dr;
+        pp.mesh.r[i] = r;
+        pp.mesh.rab[i] = dr;
+        if (r < 1e-30) {
+            pp.vloc[i] = -2.0 * z_val * 2.0 / (std::sqrt(constants::pi) * r_loc);
+        } else {
+            pp.vloc[i] = -2.0 * z_val * std::erf(r / r_loc) / r;
+        }
+    }
+
+    pp.rho_atomic.resize(npts);
+    double norm = 0.0;
+    double sigma = 1.0;
+    for (int i = 0; i < npts; ++i) {
+        double r = pp.mesh.r[i];
+        pp.rho_atomic[i] = std::exp(-r * r / (2.0 * sigma * sigma));
+        norm += r * r * pp.rho_atomic[i] * pp.mesh.rab[i];
+    }
+    norm *= constants::four_pi;
+    for (int i = 0; i < npts; ++i) {
+        pp.rho_atomic[i] *= z_val / norm;
+    }
+
+    return pp;
+}
+
+// ============================================================================
+// H2O molecule in a cubic box
+// ============================================================================
+
+/// H2O in cubic box: O at center, 2 H displaced (bond ~1.8 bohr, angle ~104.5 deg)
+/// box_ang = box side length in Angstrom (default 7.938 Ang = 15 bohr)
+inline Crystal make_h2o_crystal(double box_ang = 7.938) {
+    // O at (0.5, 0.5, 0.5), H displaced in fractional coords
+    // O-H bond ~0.96 Ang = 1.81 bohr; in fractional: 0.96/7.938 ~ 0.121
+    // H-O-H angle 104.5 deg: use symmetric displacement in xy plane
+    // H1 at (+dx, +dy, 0), H2 at (-dx, +dy, 0) relative to O
+    double bond_ang = 0.96;
+    double half_angle = 52.25 * constants::pi / 180.0;
+    double dx = bond_ang * std::sin(half_angle) / box_ang;
+    double dy = bond_ang * std::cos(half_angle) / box_ang;
+
+    Mat3 lattice = {{{box_ang, 0, 0}, {0, box_ang, 0}, {0, 0, box_ang}}};
+    std::vector<Atom> atoms = {
+        {"O", 8,  {0.5, 0.5, 0.5}},
+        {"H", 1,  {0.5 + dx, 0.5 + dy, 0.5}},
+        {"H", 1,  {0.5 - dx, 0.5 + dy, 0.5}},
+    };
+    return Crystal(lattice, std::move(atoms));
+}
+
+/// H2O PP map using analytic PPs (toy Gaussian)
+/// O uses r_loc=1.0 (soft) to ensure SCF stability in vacuum box
+inline std::map<std::string, PseudoPotential> make_h2o_pp_map() {
+    std::map<std::string, PseudoPotential> pps;
+    pps["O"] = make_analytic_pp("O", 8, 6.0, 1.0);
+    pps["H"] = make_h_pseudopotential();
+    return pps;
+}
+
+/// H2O PP map using real UPF pseudopotentials
+inline std::map<std::string, PseudoPotential> make_h2o_pp_map_real() {
+    std::map<std::string, PseudoPotential> pps;
+    pps["O"] = parse_upf("../pseudopotentials/O.pz-mt.UPF");
+    pps["H"] = parse_upf("../pseudopotentials/H.pz-vbc.UPF");
+    return pps;
+}
+
+// ============================================================================
+// MgO rocksalt primitive cell
+// ============================================================================
+
+/// MgO rocksalt FCC primitive cell (2 atoms): a = 4.21 Ang
+inline Crystal make_mgo_crystal(double a_ang = 4.21) {
+    Mat3 lattice = {{{0, a_ang/2, a_ang/2},
+                     {a_ang/2, 0, a_ang/2},
+                     {a_ang/2, a_ang/2, 0}}};
+    std::vector<Atom> atoms = {
+        {"Mg", 12, {0.0, 0.0, 0.0}},
+        {"O",  8,  {0.5, 0.5, 0.5}},
+    };
+    return Crystal(lattice, std::move(atoms));
+}
+
+/// MgO PP map using analytic PPs (toy Gaussian)
+inline std::map<std::string, PseudoPotential> make_mgo_pp_map() {
+    std::map<std::string, PseudoPotential> pps;
+    pps["Mg"] = make_analytic_pp("Mg", 12, 2.0, 0.6);
+    pps["O"]  = make_analytic_pp("O",  8,  6.0, 0.4);
+    return pps;
+}
+
+/// MgO PP map using real UPF pseudopotentials
+inline std::map<std::string, PseudoPotential> make_mgo_pp_map_real() {
+    std::map<std::string, PseudoPotential> pps;
+    pps["Mg"] = parse_upf("../pseudopotentials/Mg.pz-n-vbc.UPF");
+    pps["O"]  = parse_upf("../pseudopotentials/O.pz-mt.UPF");
+    return pps;
+}
+
+// ============================================================================
+// Graphene hexagonal cell with vacuum
+// ============================================================================
+
+/// Graphene hexagonal unit cell: a = 2.461 Ang, c = 10.583 Ang (20 bohr vacuum)
+/// 2 C atoms at (0,0,0) and (1/3, 2/3, 0)
+inline Crystal make_graphene_crystal(double a_ang = 2.461, double c_ang = 10.583) {
+    // Hexagonal lattice: a1 = (a, 0, 0), a2 = (-a/2, a*sqrt(3)/2, 0), a3 = (0, 0, c)
+    double a2x = -a_ang / 2.0;
+    double a2y = a_ang * std::sqrt(3.0) / 2.0;
+    Mat3 lattice = {{{a_ang, 0, 0}, {a2x, a2y, 0}, {0, 0, c_ang}}};
+    std::vector<Atom> atoms = {
+        {"C", 6, {0.0, 0.0, 0.0}},
+        {"C", 6, {1.0/3.0, 2.0/3.0, 0.0}},
+    };
+    return Crystal(lattice, std::move(atoms));
+}
+
+/// Graphene PP map using analytic PPs (toy Gaussian)
+inline std::map<std::string, PseudoPotential> make_graphene_pp_map() {
+    std::map<std::string, PseudoPotential> pps;
+    pps["C"] = make_analytic_pp("C", 6, 4.0, 0.4);
+    return pps;
+}
+
+/// Graphene PP map using real UPF pseudopotentials
+inline std::map<std::string, PseudoPotential> make_graphene_pp_map_real() {
+    std::map<std::string, PseudoPotential> pps;
+    pps["C"] = parse_upf("../pseudopotentials/C.pz-vbc.UPF");
+    return pps;
+}
+
+// ============================================================================
+// Fe BCC primitive cell (spin-polarized)
+// ============================================================================
+
+/// Fe BCC primitive cell: a = 2.87 Ang, BCC primitive vectors
+/// 1 Fe atom at origin
+inline Crystal make_fe_bcc_crystal(double a_ang = 2.87) {
+    double a2 = a_ang / 2.0;
+    Mat3 lattice = {{{-a2, a2, a2}, {a2, -a2, a2}, {a2, a2, -a2}}};
+    std::vector<Atom> atoms = {
+        {"Fe", 26, {0.0, 0.0, 0.0}},
+    };
+    return Crystal(lattice, std::move(atoms));
+}
+
+/// Fe BCC PP map using analytic PP (toy Gaussian, Z_val=8 for 3d+4s)
+inline std::map<std::string, PseudoPotential> make_fe_bcc_pp_map() {
+    std::map<std::string, PseudoPotential> pps;
+    pps["Fe"] = make_analytic_pp("Fe", 26, 8.0, 0.5);
+    return pps;
+}
+
+/// Fe BCC PP map using real UPF pseudopotential
+inline std::map<std::string, PseudoPotential> make_fe_bcc_pp_map_real() {
+    std::map<std::string, PseudoPotential> pps;
+    pps["Fe"] = parse_upf("../pseudopotentials/Fe.pz-hgh.UPF");
+    return pps;
+}
+
 } // namespace kronos::test

@@ -7,7 +7,7 @@ KRONOS computes ground-state total energy, electronic density, Kohn-Sham eigenva
 ## Features
 
 - **Plane-wave basis** with configurable energy cutoff (10-500 Ry)
-- **LDA** (Perdew-Zunger) and **GGA** (PBE, PBEsol) exchange-correlation via built-in routines or libxc
+- **LDA** (Perdew-Zunger) and **LSDA** spin-polarized exchange-correlation via built-in routines or libxc
 - **UPF v2 pseudopotentials** (norm-conserving)
 - **Davidson eigensolver** with Pulay/DIIS density mixing
 - **Monkhorst-Pack k-point sampling** with spglib space-group symmetry IBZ reduction
@@ -124,7 +124,7 @@ src/
   postprocessing/  Band structure, density of states
   gpu/         GPU abstraction layer (CUDA/HIP stubs for CPU builds)
   utils/       Timer/profiling, structured logger
-test/          GoogleTest suite (288 tests)
+test/          GoogleTest suite (298+ tests)
 examples/      Example input files
 docs/          Architecture, user guide, developer guide, API reference, physics notes
 cmake/         CMake find modules (FFTW3, LibXC)
@@ -142,7 +142,7 @@ See the `docs/` directory for detailed documentation:
 
 ## Testing
 
-The test suite covers all major subsystems with 264+ tests:
+The test suite covers all major subsystems with 298+ tests:
 
 ```bash
 cd build && ctest --output-on-failure
@@ -158,8 +158,8 @@ cd build && ctest --output-on-failure
 | Convergence studies | 8 | Ecut convergence, k-grid convergence, mixing |
 | Regression baselines | 8 | Frozen energy values, Ewald, forces, Madelung |
 | Forces | 12 | Real PP FD validation, Ewald FD, Newton's 3rd law, BFGS |
-| Multi-system | 4 | Al FCC, Cu FCC (d-electrons), force validation |
-| Validation | 18 | QE-matched Si diamond, physics checks |
+| Multi-system | 15+ | Si, Al, Cu, H₂O, MgO, graphene, Fe BCC (LSDA) |
+| Validation | 30+ | QE-matched Si diamond, multi-system, spin-polarized |
 
 ## Validation
 
@@ -176,8 +176,10 @@ The Gamma-only result matches to single-digit micro-Rydberg precision, confirmin
 core algorithms are essentially exact.
 
 Hellmann-Feynman forces validated against finite-difference to **5 significant figures**.
-Multi-system validation passes for Al FCC (sp-metal) and Cu FCC (d-metal) in addition
-to Si diamond. See [VALIDATION.md](VALIDATION.md) for details.
+Multi-system validation covers **7 material types**: Si diamond (semiconductor),
+Al FCC (sp-metal), Cu FCC (d-metal), H₂O (molecule), MgO (ionic insulator),
+graphene (2D semimetal), and Fe BCC (spin-polarized LSDA, magnetic moment 2.66 μ_B).
+See [VALIDATION.md](VALIDATION.md) for details.
 
 ```bash
 # Reproduce the validation calculation

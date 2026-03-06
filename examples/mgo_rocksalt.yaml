@@ -1,0 +1,28 @@
+# MgO rocksalt primitive cell (2 atoms)
+# a = 4.21 Ang (experimental), FCC primitive cell
+# Mg at (0,0,0), O at (0.5,0.5,0.5)
+system:
+  lattice:
+    - [0.000, 2.105, 2.105]
+    - [2.105, 0.000, 2.105]
+    - [2.105, 2.105, 0.000]
+  atoms:
+    - {symbol: Mg, position: [0.000, 0.000, 0.000]}
+    - {symbol: O,  position: [0.500, 0.500, 0.500]}
+
+calculation:
+  type: scf
+  ecutwfc: 40.0
+  xc: LDA_PZ
+  kpoints: [4, 4, 4, 0, 0, 0]
+  smearing: gaussian
+  degauss: 0.01
+
+pseudopotentials:
+  Mg: pseudopotentials/Mg.pz-n-vbc.UPF
+  O:  pseudopotentials/O.pz-mt.UPF
+
+convergence:
+  energy: 1e-8
+  density: 1.0
+  max_scf_steps: 100

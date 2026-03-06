@@ -1,0 +1,31 @@
+# Fe BCC spin-polarized LSDA calculation
+# BCC primitive cell, a = 2.87 Angstrom
+# 1 Fe atom, nspin=2, starting magnetization 0.5
+
+system:
+  lattice:
+    - [-1.435, 1.435, 1.435]
+    - [1.435, -1.435, 1.435]
+    - [1.435, 1.435, -1.435]
+  atoms:
+    - symbol: Fe
+      position: [0.0, 0.0, 0.0]
+
+calculation:
+  type: scf
+  ecutwfc: 40
+  xc: LDA_PZ
+  kpoints: [4, 4, 4, 0, 0, 0]
+  smearing: gaussian
+  degauss: 0.02
+  nspin: 2
+  starting_magnetization:
+    Fe: 0.5
+
+convergence:
+  energy: 1.0e-8
+  density: 1.0e-6
+  max_scf_steps: 100
+
+pseudopotentials:
+  Fe: pseudopotentials/Fe.pz-hgh.UPF

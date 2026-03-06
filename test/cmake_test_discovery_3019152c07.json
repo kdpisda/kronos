@@ -44,27 +44,27 @@
         {
           "name": "OutputSizeMatchesInput",
           "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
-          "line": 265
+          "line": 272
         },
         {
           "name": "RayleighQuotientNonNegative",
           "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
-          "line": 280
+          "line": 287
         },
         {
           "name": "NonlocalPPChangesEigenvalues",
           "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
-          "line": 304
+          "line": 311
         },
         {
           "name": "ZeroInputGivesZeroOutput",
           "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
-          "line": 366
+          "line": 373
         },
         {
           "name": "ScalingProperty",
           "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_hamiltonian.cpp",
-          "line": 383
+          "line": 390
         }
       ]
     }

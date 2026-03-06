@@ -46,6 +46,8 @@ struct CalculationParams {
     SmearingType smearing{SmearingType::None};
     double degauss{0.01};    // smearing width in Ry
     bool spin_polarized{false};
+    int nspin{1};            // 1 = unpolarized, 2 = spin-polarized (LSDA)
+    std::map<std::string, double> starting_magnetization; // element -> initial mag [-1,1]
     EigensolverType eigensolver{EigensolverType::Davidson};
 };
 

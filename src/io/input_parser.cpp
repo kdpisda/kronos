@@ -265,6 +265,40 @@ CalculationParams parse_calculation(const YAML::Node& calc) {
         params.spin_polarized = calc["spin"].as<bool>();
     }
 
+    // -- nspin -------------------------------------------------------------
+    if (calc["nspin"]) {
+        params.nspin = calc["nspin"].as<int>();
+        if (params.nspin != 1 && params.nspin != 2) {
+            throw InputValidationError(
+                "calculation.nspin: must be 1 or 2, got " +
+                std::to_string(params.nspin));
+        }
+        if (params.nspin == 2) {
+            params.spin_polarized = true;
+        }
+    } else if (params.spin_polarized) {
+        params.nspin = 2;
+    }
+
+    // -- starting_magnetization -------------------------------------------
+    if (calc["starting_magnetization"]) {
+        const auto& mag = calc["starting_magnetization"];
+        if (!mag.IsMap()) {
+            throw InputValidationError(
+                "calculation.starting_magnetization must be a mapping");
+        }
+        for (auto it = mag.begin(); it != mag.end(); ++it) {
+            std::string elem = it->first.as<std::string>();
+            double m = it->second.as<double>();
+            if (m < -1.0 || m > 1.0) {
+                throw InputValidationError(
+                    "calculation.starting_magnetization[" + elem +
+                    "]: must be in [-1, 1], got " + std::to_string(m));
+            }
+            params.starting_magnetization[elem] = m;
+        }
+    }
+
     return params;
 }
 

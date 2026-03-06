@@ -449,4 +449,257 @@ XCResult XCEvaluator::evaluate_builtin_lda_pz(const RVec& density_r,
     return result;
 }
 
+// ---------------------------------------------------------------------------
+// Spin-polarized evaluation (LSDA)
+// ---------------------------------------------------------------------------
+
+XCEvaluator::SpinXCResult XCEvaluator::evaluate_spin(
+    const RVec& density_up,
+    const RVec& density_dn,
+    double cell_volume) const
+{
+#ifdef KRONOS_HAS_LIBXC
+    const int np = static_cast<int>(density_up.size());
+    assert(static_cast<int>(density_dn.size()) == np);
+
+    SpinXCResult result;
+    result.vxc_up.assign(np, 0.0);
+    result.vxc_dn.assign(np, 0.0);
+    result.energy = 0.0;
+
+    // Pack spin densities for libxc: [n_up(0), n_dn(0), n_up(1), n_dn(1), ...]
+    std::vector<double> rho_spin(2 * np);
+    for (int i = 0; i < np; ++i) {
+        rho_spin[2*i]     = std::max(density_up[i], 0.0);
+        rho_spin[2*i + 1] = std::max(density_dn[i], 0.0);
+    }
+
+    // Initialize spin-polarized functionals
+    // We need separate init for XC_POLARIZED
+    auto eval_func_spin = [&](int func_id) {
+        if (func_id < 0) return;
+
+        xc_func_type func;
+        if (xc_func_init(&func, func_id, XC_POLARIZED) != 0) {
+            throw std::runtime_error(
+                "XCEvaluator: failed to init spin-polarized libxc functional");
+        }
+
+        std::vector<double> exc_tmp(np, 0.0);
+        std::vector<double> vrho_tmp(2 * np, 0.0);
+
+        switch (func.info->family) {
+        case XC_FAMILY_LDA:
+        case XC_FAMILY_HYB_LDA:
+            xc_lda_exc_vxc(&func, np, rho_spin.data(),
+                           exc_tmp.data(), vrho_tmp.data());
+            break;
+        case XC_FAMILY_GGA:
+        case XC_FAMILY_HYB_GGA:
+            // For GGA spin-polarized, we need sigma_uu, sigma_ud, sigma_dd
+            // For now, fall back to LDA-level (sigma=0)
+            {
+                std::vector<double> sigma(3 * np, 0.0);
+                std::vector<double> vsigma(3 * np, 0.0);
+                xc_gga_exc_vxc(&func, np, rho_spin.data(), sigma.data(),
+                                exc_tmp.data(), vrho_tmp.data(), vsigma.data());
+            }
+            break;
+        default:
+            xc_func_end(&func);
+            throw std::runtime_error(
+                "XCEvaluator::evaluate_spin: unsupported functional family");
+        }
+
+        // Accumulate (convert Hartree → Ry by ×2)
+        const double dv = cell_volume / static_cast<double>(np);
+        for (int i = 0; i < np; ++i) {
+            double n_total = rho_spin[2*i] + rho_spin[2*i + 1];
+            result.energy += dv * 2.0 * exc_tmp[i] * n_total;
+            result.vxc_up[i] += 2.0 * vrho_tmp[2*i];
+            result.vxc_dn[i] += 2.0 * vrho_tmp[2*i + 1];
+        }
+
+        xc_func_end(&func);
+    };
+
+    eval_func_spin(x_func_id_);
+    eval_func_spin(c_func_id_);
+
+    return result;
+
+#else
+    // No libxc — use built-in LSDA PZ
+    if (is_gga_) {
+        std::cerr << "[kronos] WARNING: GGA spin-polarized requested but libxc "
+                     "not available; falling back to built-in LSDA_PZ.\n";
+    }
+    return evaluate_builtin_lsda_pz(density_up, density_dn, cell_volume);
+#endif
+}
+
+// ---------------------------------------------------------------------------
+// Built-in LSDA Perdew-Zunger (spin-polarized)
+// ---------------------------------------------------------------------------
+
+namespace builtin {
+
+// Spin-polarized Slater exchange in Rydberg units.
+// ex_up = ex(2*n_up) / 2, ex_dn = ex(2*n_dn) / 2 (scaling relation)
+// vx_up = vx(2*n_up), vx_dn = vx(2*n_dn)
+static void lsda_x(const double* rho_up, const double* rho_dn,
+                    double* ex, double* vx_up, double* vx_dn, int np)
+{
+    static const double ax = 0.75 * std::cbrt(3.0 / constants::pi);
+    static const double fx = -2.0 * ax;
+    // Spin scaling: 2^(1/3) factor
+    static const double f213 = std::cbrt(2.0);
+
+    for (int i = 0; i < np; ++i) {
+        const double nu = std::max(rho_up[i], 0.0);
+        const double nd = std::max(rho_dn[i], 0.0);
+        const double n = nu + nd;
+        if (n < 1.0e-30) {
+            ex[i] = 0.0;
+            vx_up[i] = 0.0;
+            vx_dn[i] = 0.0;
+            continue;
+        }
+
+        // Spin-polarized exchange: e_x = (e_x(2*n_up) * n_up + e_x(2*n_dn) * n_dn) / n
+        double ex_u = (nu > 1e-30) ? fx * std::cbrt(2.0 * nu) : 0.0;
+        double ex_d = (nd > 1e-30) ? fx * std::cbrt(2.0 * nd) : 0.0;
+        ex[i] = (ex_u * nu + ex_d * nd) / n;
+        vx_up[i] = (nu > 1e-30) ? (4.0 / 3.0) * fx * std::cbrt(2.0 * nu) : 0.0;
+        vx_dn[i] = (nd > 1e-30) ? (4.0 / 3.0) * fx * std::cbrt(2.0 * nd) : 0.0;
+    }
+}
+
+// Spin-polarized PZ correlation using the VWN interpolation formula:
+// ec(rs, zeta) = ec_P(rs) + [ec_F(rs) - ec_P(rs)] * f(zeta)
+// where f(zeta) = [(1+zeta)^(4/3) + (1-zeta)^(4/3) - 2] / (2*(2^(1/3)-1))
+// ec_P = paramagnetic (unpolarized), ec_F = ferromagnetic (fully polarized)
+static void lsda_c_pz(const double* rho_up, const double* rho_dn,
+                       double* ec, double* vc_up, double* vc_dn, int np)
+{
+    // PZ parameters (Rydberg): paramagnetic
+    constexpr double gamma_p = -0.2846;
+    constexpr double beta1_p = 1.0529;
+    constexpr double beta2_p = 0.3334;
+    constexpr double A_p =  0.0622;
+    constexpr double B_p = -0.0960;
+    constexpr double C_p =  0.0040;
+    constexpr double D_p = -0.0232;
+
+    // PZ parameters (Rydberg): ferromagnetic
+    constexpr double gamma_f = -0.1686;
+    constexpr double beta1_f = 1.3981;
+    constexpr double beta2_f = 0.2611;
+    constexpr double A_f =  0.0311;
+    constexpr double B_f = -0.0538;
+    constexpr double C_f =  0.0014;
+    constexpr double D_f = -0.0096;
+
+    static const double rs_prefactor = std::cbrt(3.0 / (4.0 * constants::pi));
+    static const double f_denom = 2.0 * (std::cbrt(2.0) - 1.0);
+
+    // Helper: compute ec and dec/drs for given parameters
+    auto ec_pz = [](double rs, double gamma, double beta1, double beta2,
+                     double A, double B, double C, double D,
+                     double& e_c, double& de_drs) {
+        if (rs >= 1.0) {
+            double sqrs = std::sqrt(rs);
+            double denom = 1.0 + beta1 * sqrs + beta2 * rs;
+            e_c = gamma / denom;
+            de_drs = -gamma * (0.5 * beta1 / sqrs + beta2) / (denom * denom);
+        } else {
+            double lnrs = std::log(rs);
+            e_c = A * lnrs + B + C * rs * lnrs + D * rs;
+            de_drs = A / rs + C * lnrs + C + D;
+        }
+    };
+
+    for (int i = 0; i < np; ++i) {
+        const double nu = std::max(rho_up[i], 0.0);
+        const double nd = std::max(rho_dn[i], 0.0);
+        const double n = nu + nd;
+        if (n < 1.0e-30) {
+            ec[i] = 0.0;
+            vc_up[i] = 0.0;
+            vc_dn[i] = 0.0;
+            continue;
+        }
+
+        const double rs = rs_prefactor / std::cbrt(n);
+        const double zeta = (nu - nd) / n;  // spin polarization [-1, 1]
+
+        // f(zeta) spin interpolation function
+        double zp1 = std::max(1.0 + zeta, 0.0);
+        double zm1 = std::max(1.0 - zeta, 0.0);
+        double f_zeta = (std::cbrt(zp1 * zp1 * zp1 * zp1) +
+                         std::cbrt(zm1 * zm1 * zm1 * zm1) - 2.0) / f_denom;
+
+        // df/dzeta = (4/3) * [(1+z)^(1/3) - (1-z)^(1/3)] / (2*(2^(1/3)-1))
+        double df_dzeta = 0.0;
+        if (std::abs(zeta) < 1.0 - 1e-12) {
+            df_dzeta = (4.0 / 3.0) * (std::cbrt(zp1) - std::cbrt(zm1)) / f_denom;
+        }
+
+        double ec_p, dec_p_drs, ec_f, dec_f_drs;
+        ec_pz(rs, gamma_p, beta1_p, beta2_p, A_p, B_p, C_p, D_p, ec_p, dec_p_drs);
+        ec_pz(rs, gamma_f, beta1_f, beta2_f, A_f, B_f, C_f, D_f, ec_f, dec_f_drs);
+
+        // Interpolated correlation energy
+        ec[i] = ec_p + (ec_f - ec_p) * f_zeta;
+
+        // Potential: vc = ec - (rs/3) * dec/drs + (ec_f - ec_p) * df/dzeta * dzeta/dn
+        double dec_drs = dec_p_drs + (dec_f_drs - dec_p_drs) * f_zeta;
+        double vc_common = ec[i] - (rs / 3.0) * dec_drs;
+        double delta_ec = ec_f - ec_p;
+
+        // dzeta/dn_up = (1-zeta)/n,  dzeta/dn_dn = -(1+zeta)/n
+        vc_up[i] = vc_common + delta_ec * df_dzeta * (1.0 - zeta) / 1.0;
+        vc_dn[i] = vc_common - delta_ec * df_dzeta * (1.0 + zeta) / 1.0;
+        // Note: the (ec_f-ec_p)*f(zeta) contribution is already in vc_common via ec[i]
+        // The extra terms come from the zeta-dependence
+    }
+}
+
+} // namespace builtin (lsda)
+
+XCEvaluator::SpinXCResult XCEvaluator::evaluate_builtin_lsda_pz(
+    const RVec& density_up,
+    const RVec& density_dn,
+    double cell_volume) const
+{
+    const int np = static_cast<int>(density_up.size());
+
+    SpinXCResult result;
+    result.vxc_up.resize(np);
+    result.vxc_dn.resize(np);
+    result.energy = 0.0;
+
+    RVec ex(np), vx_up(np), vx_dn(np);
+    RVec ec(np), vc_up(np), vc_dn(np);
+
+    builtin::lsda_x(density_up.data(), density_dn.data(),
+                     ex.data(), vx_up.data(), vx_dn.data(), np);
+    builtin::lsda_c_pz(density_up.data(), density_dn.data(),
+                        ec.data(), vc_up.data(), vc_dn.data(), np);
+
+    const double dv = cell_volume / static_cast<double>(np);
+    double esum = 0.0;
+
+    for (int i = 0; i < np; ++i) {
+        double exc = ex[i] + ec[i];
+        result.vxc_up[i] = vx_up[i] + vc_up[i];
+        result.vxc_dn[i] = vx_dn[i] + vc_dn[i];
+        double n = std::max(density_up[i], 0.0) + std::max(density_dn[i], 0.0);
+        esum += exc * n;
+    }
+
+    result.energy = dv * esum;
+    return result;
+}
+
 } // namespace kronos

@@ -28,6 +28,8 @@ function(kronos_add_test TEST_NAME)
     )
     gtest_discover_tests(${TEST_NAME}
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        DISCOVERY_TIMEOUT 30
+        PROPERTIES TIMEOUT 600
     )
 endfunction()
 

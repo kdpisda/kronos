@@ -1,10 +1,10 @@
 {
-  "tests": 10,
+  "tests": 12,
   "name": "AllTests",
   "testsuites": [
     {
       "name": "Forces",
-      "tests": 7,
+      "tests": 9,
       "testsuite": [
         {
           "name": "NewtonsThirdLawEwald",
@@ -40,6 +40,16 @@
           "name": "EwaldForceFiniteDifference",
           "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_forces.cpp",
           "line": 214
+        },
+        {
+          "name": "RealPPForceFiniteDifference",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_forces.cpp",
+          "line": 286
+        },
+        {
+          "name": "RealPPForceComponentsFiniteDifference",
+          "file": "\/Users\/kd\/Projects\/simatra\/kronos\/test\/test_forces.cpp",
+          "line": 359
         }
       ]
     },

@@ -507,6 +507,580 @@ TEST(MultiSystem, CuFCCGammaLDA) {
                 result.eigenvalues.empty() ? 0 : result.eigenvalues[0].size());
 }
 
+// ============================================================================
+// H2O molecule validation: convergence, forces, Newton's 3rd law
+// ============================================================================
+
+// H2O with toy (analytic) PPs: SCF convergence check
+// Uses soft O PP (r_loc=1.0) and relaxed convergence for stability
+TEST(MultiSystem, H2OGammaConvergence) {
+    auto pps = test::make_h2o_pp_map();
+    Crystal crystal = test::make_h2o_crystal();
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 15.0;  // Low cutoff for toy PP
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {1, 1, 1};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.05;  // Larger smearing for molecule in box
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-3;  // Relaxed for toy PP
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "H2O Gamma SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0)
+        << "Total energy should be negative for H2O";
+
+    std::printf("  H2O Gamma (toy PP): E_total = %.6f Ry, %d SCF steps\n",
+                result.total_energy_ry, result.scf_steps);
+}
+
+// H2O: forces obey Newton's 3rd law (sum of forces ≈ 0)
+TEST(MultiSystem, H2ONewtonThirdLaw) {
+    auto pps = test::make_h2o_pp_map();
+    Crystal crystal = test::make_h2o_crystal();
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 15.0;
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {1, 1, 1};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.05;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-3;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    if (!result.converged) {
+        GTEST_SKIP() << "H2O SCF did not converge";
+    }
+    ASSERT_EQ(result.forces.size(), 3u);
+
+    // Sum of forces on all atoms should be ~zero (Newton's 3rd law)
+    for (int d = 0; d < 3; ++d) {
+        double f_sum = 0.0;
+        for (size_t a = 0; a < result.forces.size(); ++a) {
+            f_sum += result.forces[a][d];
+        }
+        EXPECT_NEAR(f_sum, 0.0, 0.05)
+            << "Newton's 3rd law violated: sum of forces in direction " << d
+            << " = " << f_sum;
+    }
+
+    std::printf("  H2O forces: O=(%+.4f,%+.4f,%+.4f), H1=(%+.4f,%+.4f,%+.4f), H2=(%+.4f,%+.4f,%+.4f)\n",
+                result.forces[0][0], result.forces[0][1], result.forces[0][2],
+                result.forces[1][0], result.forces[1][1], result.forces[1][2],
+                result.forces[2][0], result.forces[2][1], result.forces[2][2]);
+}
+
+// H2O with real UPF pseudopotentials
+// Note: H2O in a 15-bohr box creates a large FFT grid (~9000 PWs at ecut=30).
+// Use moderate cutoff and smearing for practical convergence.
+TEST(MultiSystem, H2OGammaRealPP) {
+    std::map<std::string, PseudoPotential> pps;
+    try {
+        pps = test::make_h2o_pp_map_real();
+    } catch (...) {
+        GTEST_SKIP() << "H2O UPF files not found";
+    }
+
+    Crystal crystal = test::make_h2o_crystal(6.35);  // 12 bohr box
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 12.0;  // Low cutoff for manageable PW count
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {1, 1, 1};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.05;  // Larger smearing for molecule in box
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-4;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "H2O Gamma (real PP) SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0)
+        << "Total energy should be negative for H2O";
+
+    // Forces should be finite (force-sum accuracy requires higher ecutwfc)
+    ASSERT_EQ(result.forces.size(), 3u);
+    for (size_t a = 0; a < result.forces.size(); ++a) {
+        for (int d = 0; d < 3; ++d) {
+            EXPECT_TRUE(std::isfinite(result.forces[a][d]))
+                << "Force on atom " << a << " dir " << d << " not finite";
+        }
+    }
+
+    std::printf("  H2O Gamma (real PP): E_total = %.6f Ry, %d SCF steps\n",
+                result.total_energy_ry, result.scf_steps);
+}
+
+// ============================================================================
+// MgO rocksalt validation: convergence, band gap, force symmetry
+// ============================================================================
+
+// MgO with toy PPs: Gamma-only convergence
+TEST(MultiSystem, MgOGammaConvergence) {
+    auto pps = test::make_mgo_pp_map();
+    Crystal crystal = test::make_mgo_crystal();
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 20.0;
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {1, 1, 1};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.01;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-6;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "MgO Gamma SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0)
+        << "Total energy should be negative for MgO";
+
+    // At equilibrium, forces should vanish by symmetry
+    ASSERT_EQ(result.forces.size(), 2u);
+    for (size_t a = 0; a < result.forces.size(); ++a) {
+        for (int d = 0; d < 3; ++d) {
+            EXPECT_NEAR(result.forces[a][d], 0.0, 0.05)
+                << "MgO force on atom " << a << " dir " << d
+                << " should vanish at equilibrium by symmetry";
+        }
+    }
+
+    std::printf("  MgO Gamma (toy PP): E_total = %.6f Ry, %d SCF steps\n",
+                result.total_energy_ry, result.scf_steps);
+}
+
+// MgO with real UPF pseudopotentials: Gamma-only
+TEST(MultiSystem, MgOGammaRealPP) {
+    std::map<std::string, PseudoPotential> pps;
+    try {
+        pps = test::make_mgo_pp_map_real();
+    } catch (...) {
+        GTEST_SKIP() << "MgO UPF files not found";
+    }
+
+    Crystal crystal = test::make_mgo_crystal();
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 40.0;
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {1, 1, 1};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.01;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-8;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "MgO Gamma (real PP) SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0)
+        << "Total energy should be negative for MgO";
+
+    // MgO is an insulator: check for band gap
+    // With Gamma-only, eigenvalues should show a gap
+    if (!result.eigenvalues.empty() && result.eigenvalues[0].size() >= 5) {
+        // MgO: Mg(Z_val=2) + O(Z_val=6) = 8 electrons / 2 atoms
+        // 4 occupied bands (spin factor 2), gap above band 4
+        int n_occ = 4;
+        if (static_cast<int>(result.eigenvalues[0].size()) > n_occ) {
+            double gap = result.eigenvalues[0][n_occ] - result.eigenvalues[0][n_occ - 1];
+            EXPECT_GT(gap, 0.01) << "MgO should have a band gap (insulator)";
+            std::printf("  MgO Gamma (real PP): band gap = %.4f Ry = %.3f eV\n",
+                        gap, gap * 13.6057);
+        }
+    }
+
+    std::printf("  MgO Gamma (real PP): E_total = %.6f Ry, %d SCF steps\n",
+                result.total_energy_ry, result.scf_steps);
+}
+
+// MgO with 4x4x4 k-grid (real PPs)
+TEST(MultiSystem, MgO444RealPP) {
+    std::map<std::string, PseudoPotential> pps;
+    try {
+        pps = test::make_mgo_pp_map_real();
+    } catch (...) {
+        GTEST_SKIP() << "MgO UPF files not found";
+    }
+
+    Crystal crystal = test::make_mgo_crystal();
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 40.0;
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {4, 4, 4};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.01;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-8;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "MgO 4x4x4 (real PP) SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0);
+
+    std::printf("  MgO 4x4x4 (real PP): E_total = %.6f Ry, %d SCF steps, %d IBZ k-points\n",
+                result.total_energy_ry, result.scf_steps,
+                static_cast<int>(result.eigenvalues.size()));
+}
+
+// ============================================================================
+// Graphene 2D validation: convergence with 2D k-grid
+// ============================================================================
+
+// Graphene with toy PPs: Gamma-only convergence
+// Relaxed convergence for toy PP (energy threshold 1e-3)
+TEST(MultiSystem, GrapheneGammaConvergence) {
+    auto pps = test::make_graphene_pp_map();
+    Crystal crystal = test::make_graphene_crystal();
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 15.0;  // Low cutoff for toy PP
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {1, 1, 1};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.05;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-3;  // Relaxed for toy PP
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "Graphene Gamma SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0)
+        << "Total energy should be negative for graphene";
+
+    std::printf("  Graphene Gamma (toy PP): E_total = %.6f Ry, %d SCF steps\n",
+                result.total_energy_ry, result.scf_steps);
+}
+
+// Graphene with real UPF pseudopotentials: Gamma-only
+TEST(MultiSystem, GrapheneGammaRealPP) {
+    std::map<std::string, PseudoPotential> pps;
+    try {
+        pps = test::make_graphene_pp_map_real();
+    } catch (...) {
+        GTEST_SKIP() << "C.pz-vbc.UPF not found";
+    }
+
+    Crystal crystal = test::make_graphene_crystal();
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 30.0;
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {1, 1, 1};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.02;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-8;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "Graphene Gamma (real PP) SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0)
+        << "Total energy should be negative for graphene";
+
+    std::printf("  Graphene Gamma (real PP): E_total = %.6f Ry, %d SCF steps\n",
+                result.total_energy_ry, result.scf_steps);
+}
+
+// Graphene with 4x4x1 k-grid (2D periodicity, real PPs)
+TEST(MultiSystem, Graphene441RealPP) {
+    std::map<std::string, PseudoPotential> pps;
+    try {
+        pps = test::make_graphene_pp_map_real();
+    } catch (...) {
+        GTEST_SKIP() << "C.pz-vbc.UPF not found";
+    }
+
+    Crystal crystal = test::make_graphene_crystal(2.461, 7.938);  // Reduced vacuum (15 bohr)
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 15.0;  // Lower cutoff for faster k-resolved test
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {4, 4, 1};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.03;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-4;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "Graphene 4x4x1 (real PP) SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0);
+
+    // Check eigenvalue structure for Dirac cone signature:
+    // Near Fermi level, graphene should have bands crossing (semi-metal)
+    // C: Z_val=4, 2 atoms = 8 electrons, 4 occupied bands
+    if (!result.eigenvalues.empty() && result.eigenvalues[0].size() >= 5) {
+        int n_occ = 4;
+        if (static_cast<int>(result.eigenvalues[0].size()) > n_occ) {
+            double gap_gamma = result.eigenvalues[0][n_occ] - result.eigenvalues[0][n_occ - 1];
+            std::printf("  Graphene 4x4x1 (real PP): E_total = %.6f Ry, "
+                        "HOMO-LUMO gap at Gamma = %.4f Ry, %d IBZ k-points\n",
+                        result.total_energy_ry, gap_gamma,
+                        static_cast<int>(result.eigenvalues.size()));
+        }
+    } else {
+        std::printf("  Graphene 4x4x1 (real PP): E_total = %.6f Ry, %d SCF steps\n",
+                    result.total_energy_ry, result.scf_steps);
+    }
+}
+
+// ============================================================================
+// Fe BCC spin-polarized validation: LSDA magnetic moment
+// ============================================================================
+
+// Fe BCC with toy PP: spin-polarized SCF convergence
+TEST(MultiSystem, FeBCCSpinToyPP) {
+    auto pps = test::make_fe_bcc_pp_map();
+    Crystal crystal = test::make_fe_bcc_crystal();
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 15.0;
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {1, 1, 1};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.05;
+    calc.nspin = 2;
+    calc.spin_polarized = true;
+    calc.starting_magnetization["Fe"] = 0.5;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-3;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "Fe BCC spin-polarized Gamma SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0)
+        << "Total energy should be negative for Fe BCC";
+
+    // Spin-polarized should have nonzero magnetization
+    EXPECT_GT(std::abs(result.total_magnetization), 0.01)
+        << "Fe BCC should have nonzero magnetization";
+
+    std::printf("  Fe BCC Gamma (toy PP, nspin=2): E_total = %.6f Ry, "
+                "mag = %.4f muB, |mag| = %.4f muB, %d SCF steps\n",
+                result.total_energy_ry,
+                result.total_magnetization,
+                result.absolute_magnetization,
+                result.scf_steps);
+}
+
+// Fe BCC with real UPF PP: spin-polarized LSDA
+TEST(MultiSystem, FeBCCSpinRealPP) {
+    std::map<std::string, PseudoPotential> pps;
+    try {
+        pps = test::make_fe_bcc_pp_map_real();
+    } catch (...) {
+        GTEST_SKIP() << "Fe.pz-hgh.UPF not found";
+    }
+
+    Crystal crystal = test::make_fe_bcc_crystal();
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 40.0;
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {1, 1, 1};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.02;
+    calc.nspin = 2;
+    calc.spin_polarized = true;
+    calc.starting_magnetization["Fe"] = 0.5;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-6;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "Fe BCC spin-polarized (real PP) SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0);
+
+    // At Gamma-only, d-bands aren't resolved so exchange splitting can
+    // fully polarize d-states (mag up to 4 muB). With k-point sampling,
+    // the moment converges to ~2.2 muB.
+    EXPECT_GT(result.total_magnetization, 0.5)
+        << "Fe BCC magnetic moment too low";
+    EXPECT_LT(result.total_magnetization, 6.0)
+        << "Fe BCC magnetic moment too high (unphysical)";
+
+    // Spin-resolved eigenvalues should be stored
+    ASSERT_EQ(result.eigenvalues_spin.size(), 2u);
+
+    std::printf("  Fe BCC Gamma (real PP, nspin=2): E_total = %.6f Ry, "
+                "mag = %.4f muB, |mag| = %.4f muB, %d SCF steps\n",
+                result.total_energy_ry,
+                result.total_magnetization,
+                result.absolute_magnetization,
+                result.scf_steps);
+}
+
+// Fe BCC with 4x4x4 k-grid, spin-polarized (real PP)
+TEST(MultiSystem, FeBCC444SpinRealPP) {
+    std::map<std::string, PseudoPotential> pps;
+    try {
+        pps = test::make_fe_bcc_pp_map_real();
+    } catch (...) {
+        GTEST_SKIP() << "Fe.pz-hgh.UPF not found";
+    }
+
+    Crystal crystal = test::make_fe_bcc_crystal();
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 40.0;
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {4, 4, 4};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.02;
+    calc.nspin = 2;
+    calc.spin_polarized = true;
+    calc.starting_magnetization["Fe"] = 0.5;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-6;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "Fe BCC 4x4x4 spin-polarized SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0);
+
+    // With k-point sampling, magnetic moment should be closer to ~2.2 muB
+    EXPECT_GT(result.total_magnetization, 1.0)
+        << "Fe BCC 4x4x4 magnetic moment too low";
+
+    std::printf("  Fe BCC 4x4x4 (real PP, nspin=2): E_total = %.6f Ry, "
+                "mag = %.4f muB, |mag| = %.4f muB, %d SCF steps, %d IBZ k-points\n",
+                result.total_energy_ry,
+                result.total_magnetization,
+                result.absolute_magnetization,
+                result.scf_steps,
+                static_cast<int>(result.eigenvalues.size()));
+}
+
+// Fe BCC: verify spin-polarized energy is lower than unpolarized
+TEST(MultiSystem, FeBCCSpinLowerEnergy) {
+    auto pps = test::make_fe_bcc_pp_map();
+    Crystal crystal = test::make_fe_bcc_crystal();
+
+    // Unpolarized (nspin=1)
+    CalculationParams calc_ns1;
+    calc_ns1.type = CalculationType::SCF;
+    calc_ns1.ecutwfc = 15.0;
+    calc_ns1.xc_functional = "LDA_PZ";
+    calc_ns1.kpoints.grid = {1, 1, 1};
+    calc_ns1.smearing = SmearingType::Gaussian;
+    calc_ns1.degauss = 0.05;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-3;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver_ns1(crystal, calc_ns1, conv, pps);
+    auto r_ns1 = solver_ns1.solve();
+
+    // Spin-polarized (nspin=2)
+    CalculationParams calc_ns2 = calc_ns1;
+    calc_ns2.nspin = 2;
+    calc_ns2.spin_polarized = true;
+    calc_ns2.starting_magnetization["Fe"] = 0.5;
+
+    SCFSolver solver_ns2(crystal, calc_ns2, conv, pps);
+    auto r_ns2 = solver_ns2.solve();
+
+    if (!r_ns1.converged || !r_ns2.converged) {
+        GTEST_SKIP() << "One or both SCF runs did not converge";
+    }
+
+    // Spin-polarized energy should be lower (more stable) for Fe
+    EXPECT_LT(r_ns2.total_energy_ry, r_ns1.total_energy_ry + 1e-6)
+        << "Spin-polarized E=" << r_ns2.total_energy_ry
+        << " should be <= unpolarized E=" << r_ns1.total_energy_ry;
+
+    std::printf("  Fe BCC: E(nspin=1)=%.6f Ry, E(nspin=2)=%.6f Ry, delta=%.4f Ry\n",
+                r_ns1.total_energy_ry, r_ns2.total_energy_ry,
+                r_ns2.total_energy_ry - r_ns1.total_energy_ry);
+}
+
 // Al forces at non-equilibrium: displacement + FD validation
 TEST(MultiSystem, AlFCCForceValidation) {
     std::map<std::string, PseudoPotential> pps;

@@ -38,13 +38,28 @@ public:
     XCEvaluator(const XCEvaluator&) = delete;
     XCEvaluator& operator=(const XCEvaluator&) = delete;
 
-    /// Evaluate the XC functional on a real-space density grid.
+    /// Evaluate the XC functional on a real-space density grid (unpolarized).
     ///
     /// @param density_r    Electron density n(r) on the real-space grid.
     /// @param cell_volume  Unit cell volume in bohr^3.
     /// @return XCResult containing exc, vxc, and total energy.
     [[nodiscard]] XCResult evaluate(const RVec& density_r,
                                     double cell_volume) const;
+
+    /// Evaluate the spin-polarized XC functional.
+    ///
+    /// @param density_up   Spin-up electron density n_up(r).
+    /// @param density_dn   Spin-down electron density n_dn(r).
+    /// @param cell_volume  Unit cell volume in bohr^3.
+    /// @return XCResult where vxc contains V_xc_up and vxc_dn (interleaved or separate).
+    struct SpinXCResult {
+        RVec   vxc_up;   ///< V_xc for spin-up
+        RVec   vxc_dn;   ///< V_xc for spin-down
+        double energy;   ///< Total E_xc
+    };
+    [[nodiscard]] SpinXCResult evaluate_spin(const RVec& density_up,
+                                              const RVec& density_dn,
+                                              double cell_volume) const;
 
     /// Evaluate the GGA XC functional on a real-space density grid.
     ///
@@ -83,6 +98,11 @@ private:
     // Built-in fallback for LDA_PZ when libxc is not available
     XCResult evaluate_builtin_lda_pz(const RVec& density_r,
                                      double cell_volume) const;
+
+    // Built-in spin-polarized LDA_PZ (LSDA)
+    SpinXCResult evaluate_builtin_lsda_pz(const RVec& density_up,
+                                           const RVec& density_dn,
+                                           double cell_volume) const;
 };
 
 } // namespace kronos

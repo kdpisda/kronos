@@ -1,0 +1,27 @@
+# Graphene hexagonal cell with vacuum (2D system)
+# a = 2.461 Ang = 4.651 bohr, c = 10.583 Ang = 20 bohr (vacuum)
+# 2 C atoms: (0,0,0) and (1/3, 2/3, 0)
+system:
+  lattice:
+    - [2.461,  0.000,  0.000]
+    - [-1.2305, 2.131,  0.000]
+    - [0.000,  0.000, 10.583]
+  atoms:
+    - {symbol: C, position: [0.000, 0.000, 0.000]}
+    - {symbol: C, position: [0.333333, 0.666667, 0.000]}
+
+calculation:
+  type: scf
+  ecutwfc: 30.0
+  xc: LDA_PZ
+  kpoints: [4, 4, 1, 0, 0, 0]
+  smearing: gaussian
+  degauss: 0.02
+
+pseudopotentials:
+  C: pseudopotentials/C.pz-vbc.UPF
+
+convergence:
+  energy: 1e-8
+  density: 1.0
+  max_scf_steps: 100

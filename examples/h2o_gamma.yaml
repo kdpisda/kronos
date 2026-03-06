@@ -1,0 +1,29 @@
+# H2O molecule in a cubic box (Gamma-only)
+# O-H bond length ~1.8 bohr (0.96 Ang), H-O-H angle ~104.5 deg
+# Box size: 15 bohr = 7.938 Ang (vacuum padding for isolated molecule)
+system:
+  lattice:
+    - [7.938, 0.000, 0.000]
+    - [0.000, 7.938, 0.000]
+    - [0.000, 0.000, 7.938]
+  atoms:
+    - {symbol: O, position: [0.500, 0.500, 0.500]}
+    - {symbol: H, position: [0.560, 0.560, 0.500]}
+    - {symbol: H, position: [0.440, 0.560, 0.500]}
+
+calculation:
+  type: scf
+  ecutwfc: 30.0
+  xc: LDA_PZ
+  kpoints: [1, 1, 1, 0, 0, 0]
+  smearing: gaussian
+  degauss: 0.01
+
+pseudopotentials:
+  O: pseudopotentials/O.pz-mt.UPF
+  H: pseudopotentials/H.pz-vbc.UPF
+
+convergence:
+  energy: 1e-8
+  density: 1.0
+  max_scf_steps: 100
