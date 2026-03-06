@@ -37,11 +37,16 @@ public:
                const PlaneWaveBasis& basis,
                const std::map<std::string, PseudoPotential>& pseudopotentials);
 
+    /// Precompute and cache beta projectors for a given k-point.
+    /// Call this once before apply() for each new k-point to avoid
+    /// recomputing the expensive radial Bessel transforms every time.
+    void prepare_kpoint(const Vec3& k_frac);
+
     /// Apply V_NL to a single wavefunction in G-space:
     ///   (V_NL |psi>)_G = sum_{a,i,j} D_{ij} <beta_j|psi> beta_i(G)
     ///
-    /// The projectors are computed using |k+G| (not |G|) and the phase
-    /// factor uses exp(-i(k+G).tau).
+    /// Uses cached projectors from prepare_kpoint(). If prepare_kpoint()
+    /// was not called for this k-point, falls back to on-the-fly computation.
     ///
     /// @param psi_g   Wavefunction coefficients in the plane-wave basis.
     /// @param k_frac  k-point in fractional reciprocal coordinates.
@@ -106,6 +111,11 @@ private:
 
     /// Radial grid data per species (shared across atoms of the same species).
     std::map<std::string, RadialGrid> species_meshes_;
+
+    /// Cached beta projectors per atom for the current k-point.
+    /// cached_beta_kg_[atom_index][expanded_proj_index] is a CVec of length npw.
+    mutable std::vector<std::vector<CVec>> cached_beta_kg_;
+    mutable Vec3 cached_kpoint_{1e30, 1e30, 1e30};  // sentinel
 
     /// Compute the expanded projectors beta_kg[proj_expanded][ig] for a given
     /// k-point.  Uses |k+G| for the Bessel transform and exp(-i(k+G).tau)

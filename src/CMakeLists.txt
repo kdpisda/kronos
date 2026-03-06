@@ -56,6 +56,12 @@ if(LibXC_FOUND)
     target_link_libraries(kronos_lib PUBLIC LibXC::xc)
 endif()
 
+# -- Optional: Spglib -------------------------------------------------------
+if(Spglib_FOUND)
+    target_compile_definitions(kronos_lib PUBLIC KRONOS_HAS_SPGLIB)
+    target_link_libraries(kronos_lib PUBLIC Spglib::spglib)
+endif()
+
 # ============================================================================
 # GPU sources & linking
 # ============================================================================

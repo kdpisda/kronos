@@ -1,8 +1,10 @@
 #include "potential/local_pp.hpp"
 #include "core/constants.hpp"
+#include "utils/radial_integral.hpp"
 
 #include <cassert>
 #include <cmath>
+#include <vector>
 
 namespace kronos {
 
@@ -90,22 +92,22 @@ double LocalPPEvaluator::energy(const CVec& density_g, double volume,
 //
 // Uses Coulomb tail subtraction for numerical stability.
 //
-// V_loc(r) -> -Z_val / r  for large r.  Direct numerical FT of a
-// 1/r tail converges very slowly and is inaccurate.  We split:
+// In Rydberg units, V_loc(r) -> -2*Z_val / r for large r.
+// Direct numerical FT of a 1/r tail converges very slowly.  We split:
 //
-//   V_loc_short(r) = V_loc(r) - V_loc_long(r)       (short-range)
-//   V_loc_long(r)  = -Z_val * erf(r / r_loc) / r    (long-range)
+//   V_loc_short(r) = V_loc(r) + 2*Z_val * erf(r / r_loc) / r  (short-range)
+//   V_loc_long(r)  = -2*Z_val * erf(r / r_loc) / r             (long-range)
 //
 // The short-range part is numerically Fourier-transformed (converges
 // fast because V_loc_short -> 0 for large r), and V_loc_long has an
 // analytic FT:
 //
-//   FT[V_loc_long](q) = -Z_val * 4*pi / q^2  * exp(-q^2 * r_loc^2 / 4)
-//   FT[V_loc_long](0) = -Z_val * pi * r_loc^2
+//   FT[V_loc_long](q) = -2*Z_val * 4*pi / q^2 * exp(-q^2 * r_loc^2 / 4)
+//   FT[V_loc_long](0) = -2*Z_val * pi * r_loc^2
 //
-// Then: V_loc(q) = [V_loc_short_num(q) + V_loc_long_analytic(q)] / Omega
+// Then: V_loc(q) = [4*pi * integral_short + FT_long(q)] / Omega
 //
-// r_loc is chosen as r[npoints-1] / 5.0 following standard practice.
+// r_loc = 1.0 bohr ensures erf(r/r_loc) ≈ 1 in the Coulomb tail region.
 // ===================================================================
 
 double LocalPPEvaluator::vloc_of_q(const PseudoPotential& pp, double q,
@@ -122,64 +124,59 @@ double LocalPPEvaluator::vloc_of_q(const PseudoPotential& pp, double q,
     assert(static_cast<int>(rab.size()) >= npts);
     assert(npts > 0);
 
-    // Choose r_loc: a fraction of the outermost radial grid point.
-    // This ensures erf(r/r_loc) ~ 1 well within the grid, making
-    // V_loc_short(r) decay rapidly.
-    const double r_loc = r[npts - 1] / 5.0;
+    // Choose r_loc: controls the erf splitting between short-range
+    // (numerically integrated) and long-range (analytic) parts.
+    // Must be small enough that erf(r/r_loc) ≈ 1 in the Coulomb tail
+    // region (r > ~3 bohr for most elements), ensuring rapid convergence
+    // of the short-range integral.
+    const double r_loc = 1.0;  // bohr; standard choice for NC pseudopotentials
 
-    // Numerical integration of the short-range part:
-    //   V_loc_short_num(q) = 4*pi * integral r^2
-    //       [V_loc(r) + Z_val * erf(r/r_loc) / r] * sinc(qr) * rab * dr
+    // In Rydberg units, the Coulomb potential is -2Z/r (not -Z/r).
+    // The long-range part we subtract analytically is:
+    //   V_long(r) = -2*Z_val * erf(r/r_loc) / r
     //
-    // Note: V_loc_short(r) = V_loc(r) - V_loc_long(r)
-    //     = V_loc(r) - (-Z_val * erf(r/r_loc)/r)
-    //     = V_loc(r) + Z_val * erf(r/r_loc)/r
+    // The short-range remainder is:
+    //   V_short(r) = V_loc(r) - V_long(r) = V_loc(r) + 2*Z_val * erf(r/r_loc) / r
+    const double z2 = 2.0 * z_val;  // factor of 2 for Rydberg units
 
-    double integral_short = 0.0;
+    // Build integrand array for Simpson's rule
+    std::vector<double> integrand(npts, 0.0);
 
     if (q < 1.0e-12) {
         // q = 0: sinc(0) = 1
         for (int i = 0; i < npts; ++i) {
             const double ri = r[i];
-            // For r -> 0: erf(r/r_loc)/r -> 2/(sqrt(pi)*r_loc), so
-            // r^2 * Z_val * erf(r/r_loc)/r -> 0. Safe to skip r=0.
             if (ri < 1.0e-30) continue;
-            const double vloc_short_i = vloc[i] + z_val * std::erf(ri / r_loc) / ri;
-            integral_short += ri * ri * vloc_short_i * rab[i];
+            const double vloc_short_i = vloc[i] + z2 * std::erf(ri / r_loc) / ri;
+            integrand[i] = ri * ri * vloc_short_i;
         }
+        double integral_short = simpson_radial(integrand, rab, npts);
 
-        // Analytic FT of the long-range part at q=0:
-        //   FT[-Z*erf(r/r_loc)/r](q=0) = -Z * pi * r_loc^2
-        const double vloc_long_0 = -z_val * constants::pi * r_loc * r_loc;
-
-        // Combine: V_loc(0) = (4*pi * integral_short + 4*pi * vloc_long_0) / Omega
-        //        = 4*pi * (integral_short + vloc_long_0) / Omega
-        // Note: vloc_long_0 already has the 4*pi factored out in the
-        // standard derivation. Let's be precise:
+        // Analytic FT of V_long at q=0 (regularized).
         //
-        // FT_full[f](q) = 4*pi * integral r^2 f(r) sinc(qr) dr
-        // For the long-range part alone:
-        //   FT_full[V_long](0) = 4*pi * integral r^2 (-Z*erf(r/r_loc)/r) dr
-        //                      = -Z * 4*pi * integral r * erf(r/r_loc) dr
-        //   = -Z * pi * r_loc^2  (standard result)
+        // FT[-2Z*erf(r/σ)/r](q) = -8πZ * exp(-q²σ²/4) / q²
+        //                        = -8πZ/q² + 2πZσ² + O(q²)
         //
-        // So: total = [4*pi * integral_short + (-Z * pi * r_loc^2)] / Omega
+        // The -8πZ/q² divergence cancels with the Hartree G=0 (set to 0)
+        // and the Ewald charged correction.  The finite remainder that
+        // must be kept is +2πZσ² = +z2 * π * σ².
         return (constants::four_pi * integral_short
-                - z_val * constants::pi * r_loc * r_loc) / volume;
+                + z2 * constants::pi * r_loc * r_loc) / volume;
     } else {
         for (int i = 0; i < npts; ++i) {
             const double ri = r[i];
             if (ri < 1.0e-30) continue;
-            const double vloc_short_i = vloc[i] + z_val * std::erf(ri / r_loc) / ri;
+            const double vloc_short_i = vloc[i] + z2 * std::erf(ri / r_loc) / ri;
             const double qr = q * ri;
             const double sinc_qr = std::sin(qr) / qr;
-            integral_short += ri * ri * vloc_short_i * sinc_qr * rab[i];
+            integrand[i] = ri * ri * vloc_short_i * sinc_qr;
         }
+        double integral_short = simpson_radial(integrand, rab, npts);
 
-        // Analytic FT of the long-range part at q != 0:
-        //   FT[-Z*erf(r/r_loc)/r](q) = -Z * 4*pi / q^2 * exp(-q^2 * r_loc^2 / 4)
+        // Analytic FT of V_long at q != 0:
+        //   FT[-2Z*erf(r/r_loc)/r](q) = -2Z * 4*pi / q^2 * exp(-q^2 * r_loc^2 / 4)
         const double q2 = q * q;
-        const double vloc_long_q = -z_val * constants::four_pi / q2
+        const double vloc_long_q = -z2 * constants::four_pi / q2
                                    * std::exp(-q2 * r_loc * r_loc / 4.0);
 
         return (constants::four_pi * integral_short + vloc_long_q) / volume;

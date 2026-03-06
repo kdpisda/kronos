@@ -20,7 +20,7 @@ public:
     Hamiltonian(const Crystal& crystal,
                 const PlaneWaveBasis& basis,
                 FFTGrid& fft_grid,
-                const NonlocalPP& nonlocal_pp);
+                NonlocalPP& nonlocal_pp);
 
     // Update the effective local potential V_eff(r) on the real-space grid
     // Called each SCF step after computing new Hartree + XC + local PP potentials
@@ -33,8 +33,9 @@ public:
     // Returns H|psi> in G-space
     CVec apply(const CVec& psi_g, const Vec3& k_frac) const;
 
-    // Get a std::function wrapper for use with the Davidson solver
-    std::function<CVec(const CVec&)> get_apply_function(const Vec3& k_frac) const;
+    // Get a std::function wrapper for use with the Davidson solver.
+    // Precomputes and caches nonlocal projectors for this k-point.
+    std::function<CVec(const CVec&)> get_apply_function(const Vec3& k_frac);
 
     // Get kinetic energy diagonal (used as preconditioner for Davidson)
     std::vector<double> kinetic_diagonal(const Vec3& k_frac) const;
@@ -43,7 +44,7 @@ private:
     const Crystal& crystal_;
     const PlaneWaveBasis& basis_;
     FFTGrid& fft_grid_;
-    const NonlocalPP& nonlocal_pp_;
+    NonlocalPP& nonlocal_pp_;
 
     std::vector<complex_t> veff_r_;  // effective potential on real-space grid
 };

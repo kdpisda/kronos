@@ -11,13 +11,29 @@ namespace kronos {
 // Construction
 // -------------------------------------------------------------------------
 
-PlaneWaveBasis::PlaneWaveBasis(const Crystal& crystal, double ecutwfc)
+PlaneWaveBasis::PlaneWaveBasis(const Crystal& crystal, double ecutwfc, double k_max)
     : ecutwfc_(ecutwfc), recip_lattice_(crystal.reciprocal_lattice())
 {
     if (ecutwfc_ <= 0.0) {
         throw std::invalid_argument(
             "PlaneWaveBasis: ecutwfc must be positive");
     }
+
+    // Expand the G-vector sphere to ensure completeness for all k-points.
+    //
+    // The physics cutoff is |k+G|^2 <= ecutwfc for each k-point.
+    // With a shared basis, we need all G where |k+G|^2 <= ecutwfc for ANY k
+    // with |k| <= k_max. The worst case is when k and G are anti-parallel:
+    //   |k+G|^2 = (|G| - |k|)^2 <= ecutwfc
+    //   |G| <= sqrt(ecutwfc) + |k|
+    //   |G|^2 <= (sqrt(ecutwfc) + k_max)^2
+    if (k_max > 0.0) {
+        double g_max_expanded = std::sqrt(ecutwfc_) + k_max;
+        gvec_cutoff_ = g_max_expanded * g_max_expanded;
+    } else {
+        gvec_cutoff_ = ecutwfc_;
+    }
+
     enumerate_gvectors(crystal);
 }
 
@@ -54,7 +70,8 @@ std::vector<double> PlaneWaveBasis::kinetic_energies(const Vec3& k_frac) const {
         double kpg0 = k_cart[0] + g.cart[0];
         double kpg1 = k_cart[1] + g.cart[1];
         double kpg2 = k_cart[2] + g.cart[2];
-        ekin[i] = 0.5 * (kpg0 * kpg0 + kpg1 * kpg1 + kpg2 * kpg2);
+        // Rydberg atomic units: T = |k+G|^2 (m_e = 1/2, so T = p^2/(2m) = |k+G|^2)
+        ekin[i] = kpg0 * kpg0 + kpg1 * kpg1 + kpg2 * kpg2;
     }
     return ekin;
 }
@@ -70,11 +87,8 @@ std::array<int, 3> PlaneWaveBasis::max_miller() const { return max_miller_; }
 void PlaneWaveBasis::enumerate_gvectors(const Crystal& crystal) {
     const Mat3& b = recip_lattice_;
 
-    // Determine maximum Miller index in each direction.
-    // |G|^2/2 <= ecutwfc  =>  |G| <= sqrt(2*ecutwfc)
-    // For direction i, the minimum |G| step is |b_i|, so
-    // max_i = floor(sqrt(2*ecutwfc) / |b_i|) + 1
-    double g_max = std::sqrt(2.0 * ecutwfc_);
+    // Use the (possibly expanded) cutoff for the G-vector sphere
+    double g_max = std::sqrt(gvec_cutoff_);
 
     for (int i = 0; i < 3; ++i) {
         double b_norm = std::sqrt(b[i][0] * b[i][0]
@@ -103,8 +117,8 @@ void PlaneWaveBasis::enumerate_gvectors(const Crystal& crystal) {
                              + g_cart[1] * g_cart[1]
                              + g_cart[2] * g_cart[2];
 
-                // Kinetic energy = |G|^2 / 2 in Ry
-                if (norm2 / 2.0 <= ecutwfc_) {
+                // Include G if |G|^2 <= gvec_cutoff
+                if (norm2 <= gvec_cutoff_) {
                     GVector gv;
                     gv.h = h;
                     gv.k = k;

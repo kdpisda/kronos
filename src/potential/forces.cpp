@@ -1,10 +1,12 @@
 #include "potential/forces.hpp"
 #include "core/constants.hpp"
 #include "core/spherical_harmonics.hpp"
+#include "utils/radial_integral.hpp"
 
 #include <cassert>
 #include <cmath>
 #include <complex>
+#include <vector>
 
 namespace kronos {
 
@@ -67,6 +69,9 @@ double sbessel(int l, double x)
 }
 
 /// Spherical Bessel transform of a beta projector at |q|.
+/// UPF convention: beta.values stores r*beta(r), not beta(r).
+/// The 3D radial FT integral is: integral r^2 beta(r) j_l(qr) dr
+/// Since beta.values = r*beta(r): r^2 * beta(r) = r * beta.values
 double beta_of_q(const BetaProjector& beta,
                  const RadialGrid& mesh,
                  double q)
@@ -76,14 +81,15 @@ double beta_of_q(const BetaProjector& beta,
                               static_cast<int>(beta.values.size()));
     if (npts <= 0) return 0.0;
 
-    double integral = 0.0;
+    std::vector<double> integrand(npts);
     for (int i = 0; i < npts; ++i) {
         const double ri = mesh.r[i];
         const double qr = q * ri;
         const double jl = sbessel(l, qr);
-        integral += ri * ri * beta.values[i] * jl * mesh.rab[i];
+        // r * beta.values[i] = r * (r*beta(r)) = r^2 * beta(r)
+        integrand[i] = ri * beta.values[i] * jl;
     }
-    return integral;
+    return simpson_radial(integrand, mesh.rab, npts);
 }
 
 } // anonymous namespace
@@ -105,38 +111,41 @@ double ForceCalculator::vloc_of_q(const PseudoPotential& pp, double q,
     const auto& vloc = pp.vloc;
     const int npts = pp.mesh.npoints;
     const double z_val = pp.z_valence;
+    const double z2 = 2.0 * z_val;  // factor of 2 for Rydberg units
 
     assert(static_cast<int>(r.size()) >= npts);
     assert(static_cast<int>(vloc.size()) >= npts);
     assert(static_cast<int>(rab.size()) >= npts);
     assert(npts > 0);
 
-    const double r_loc = r[npts - 1] / 5.0;
+    const double r_loc = 1.0;  // bohr; must match LocalPPEvaluator::vloc_of_q
 
-    double integral_short = 0.0;
+    std::vector<double> integrand(npts, 0.0);
 
     if (q < 1.0e-12) {
         for (int i = 0; i < npts; ++i) {
             const double ri = r[i];
             if (ri < 1.0e-30) continue;
-            const double vloc_short_i = vloc[i] + z_val * std::erf(ri / r_loc) / ri;
-            integral_short += ri * ri * vloc_short_i * rab[i];
+            const double vloc_short_i = vloc[i] + z2 * std::erf(ri / r_loc) / ri;
+            integrand[i] = ri * ri * vloc_short_i;
         }
+        double integral_short = simpson_radial(integrand, rab, npts);
 
         return (constants::four_pi * integral_short
-                - z_val * constants::pi * r_loc * r_loc) / volume;
+                + z2 * constants::pi * r_loc * r_loc) / volume;
     } else {
         for (int i = 0; i < npts; ++i) {
             const double ri = r[i];
             if (ri < 1.0e-30) continue;
-            const double vloc_short_i = vloc[i] + z_val * std::erf(ri / r_loc) / ri;
+            const double vloc_short_i = vloc[i] + z2 * std::erf(ri / r_loc) / ri;
             const double qr = q * ri;
             const double sinc_qr = std::sin(qr) / qr;
-            integral_short += ri * ri * vloc_short_i * sinc_qr * rab[i];
+            integrand[i] = ri * ri * vloc_short_i * sinc_qr;
         }
+        double integral_short = simpson_radial(integrand, rab, npts);
 
         const double q2 = q * q;
-        const double vloc_long_q = -z_val * constants::four_pi / q2
+        const double vloc_long_q = -z2 * constants::four_pi / q2
                                    * std::exp(-q2 * r_loc * r_loc / 4.0);
 
         return (constants::four_pi * integral_short + vloc_long_q) / volume;
@@ -185,17 +194,19 @@ double ForceCalculator::vloc_of_q(const PseudoPotential& pp, double q,
 
 std::vector<Vec3> ForceCalculator::compute_local_forces(
     const Crystal& crystal,
-    const PlaneWaveBasis& basis,
     const std::map<std::string, PseudoPotential>& pseudopotentials,
-    const CVec& density_g,
+    const std::vector<complex_t>& density_g_full,
+    const std::vector<Vec3>& grid_gcart,
+    const std::vector<double>& grid_g2,
+    double ecutrho,
+    double volume,
     int num_grid)
 {
     const size_t natoms = crystal.num_atoms();
-    const auto& gvecs = basis.gvectors();
-    const size_t npw = gvecs.size();
-    const double volume = crystal.volume();
 
-    assert(density_g.size() == npw);
+    assert(static_cast<int>(density_g_full.size()) == num_grid);
+    assert(static_cast<int>(grid_gcart.size()) == num_grid);
+    assert(static_cast<int>(grid_g2.size()) == num_grid);
     assert(num_grid > 0);
 
     std::vector<Vec3> forces(natoms, {0.0, 0.0, 0.0});
@@ -206,17 +217,19 @@ std::vector<Vec3> ForceCalculator::compute_local_forces(
         positions[ia] = crystal.frac_to_cart(crystal.atom(ia).position);
     }
 
-    // For each G-vector, compute the per-species form factor and accumulate
-    // forces for each atom of that species
-    for (size_t ig = 0; ig < npw; ++ig) {
-        const Vec3& g_cart = gvecs[ig].cart;
-        const double g_mag = std::sqrt(gvecs[ig].norm2);
+    // Loop over ALL G-vectors on the full FFT grid (matching the energy sum).
+    // Only include G² ≤ ecutrho (same cutoff as vloc_full_g in the SCF loop).
+    for (int ig = 0; ig < num_grid; ++ig) {
+        if (grid_g2[ig] > ecutrho + 1.0e-6) continue;
+
+        const double g_mag = std::sqrt(grid_g2[ig]);
 
         // Skip G=0: the derivative iG*exp(iG.tau_I) vanishes at G=0
         if (g_mag < 1.0e-12) continue;
 
-        const double n_r = density_g[ig].real();
-        const double n_i = density_g[ig].imag();
+        const Vec3& g_cart = grid_gcart[ig];
+        const double n_r = density_g_full[ig].real();
+        const double n_i = density_g_full[ig].imag();
 
         // For each atom, accumulate the force contribution from this G
         for (size_t ia = 0; ia < natoms; ++ia) {
@@ -234,7 +247,7 @@ std::vector<Vec3> ForceCalculator::compute_local_forces(
             const double sin_gt = std::sin(gdottau);
             const double cos_gt = std::cos(gdottau);
 
-            // Force contribution (see derivation above):
+            // Force contribution (see derivation in header):
             // F[d] += Omega * vloc_q * G[d] * (n_r*sin(G.tau) + n_i*cos(G.tau))
             // Divide by num_grid for un-normalized FFT density coefficients.
             const double factor = volume * vloc_q
@@ -285,7 +298,7 @@ std::vector<Vec3> ForceCalculator::compute_nonlocal_forces(
     const std::vector<std::vector<double>>& occupations,
     const std::vector<Vec3>& k_points,
     const std::vector<double>& k_weights,
-    int spin_factor)
+    int /* spin_factor: unused, occupations already include spin */)
 {
     const size_t natoms = crystal.num_atoms();
     const auto& gvecs = basis.gvectors();
@@ -300,11 +313,36 @@ std::vector<Vec3> ForceCalculator::compute_nonlocal_forces(
         {1.0, 0.0}, {0.0, 1.0}, {-1.0, 0.0}, {0.0, -1.0}
     };
 
+    // Reciprocal lattice for converting k_frac -> k_cart
+    const Mat3 recip_lat = crystal.reciprocal_lattice();
+
     std::vector<Vec3> forces(natoms, {0.0, 0.0, 0.0});
 
     // Loop over k-points
     for (size_t ik = 0; ik < k_points.size(); ++ik) {
         const int num_bands = static_cast<int>(wavefunctions[ik].size());
+        const Vec3& k_frac = k_points[ik];
+
+        // Convert k from fractional to Cartesian (1/bohr)
+        Vec3 k_cart{};
+        for (int d = 0; d < 3; ++d) {
+            k_cart[d] = k_frac[0] * recip_lat[0][d]
+                      + k_frac[1] * recip_lat[1][d]
+                      + k_frac[2] * recip_lat[2][d];
+        }
+
+        // Precompute k+G vectors and magnitudes for this k-point
+        std::vector<Vec3> kpg_cart(npw);
+        std::vector<double> kpg_mag(npw);
+        for (size_t ig = 0; ig < npw; ++ig) {
+            const Vec3& gc = gvecs[ig].cart;
+            kpg_cart[ig] = {k_cart[0] + gc[0],
+                            k_cart[1] + gc[1],
+                            k_cart[2] + gc[2]};
+            kpg_mag[ig] = std::sqrt(kpg_cart[ig][0] * kpg_cart[ig][0]
+                                  + kpg_cart[ig][1] * kpg_cart[ig][1]
+                                  + kpg_cart[ig][2] * kpg_cart[ig][2]);
+        }
 
         // Loop over atoms
         for (size_t ia = 0; ia < natoms; ++ia) {
@@ -360,7 +398,8 @@ std::vector<Vec3> ForceCalculator::compute_nonlocal_forces(
                 }
             }
 
-            // Precompute beta_{ie}(G) and dbeta_{ie}(G) for this atom
+            // Precompute beta_{ie}(k+G) and dbeta_{ie}(k+G) for this atom
+            // Key: must use k+G (not G) for radial, angular, phase, derivative
             std::vector<CVec> beta_kg_exp(nproj_expanded);
             std::vector<std::array<CVec, 3>> dbeta_kg_exp(nproj_expanded);
 
@@ -371,11 +410,10 @@ std::vector<Vec3> ForceCalculator::compute_nonlocal_forces(
                     const int l = beta.angular_momentum;
                     const complex_t il = il_table[l % 4];
 
-                    // Precompute radial transforms (same for all m)
+                    // Precompute radial transforms at |k+G| (same for all m)
                     std::vector<double> radial_cache(npw);
                     for (size_t ig = 0; ig < npw; ++ig) {
-                        const double g_mag = std::sqrt(gvecs[ig].norm2);
-                        radial_cache[ig] = beta_of_q(beta, pp.mesh, g_mag);
+                        radial_cache[ig] = beta_of_q(beta, pp.mesh, kpg_mag[ig]);
                     }
 
                     for (int m_val = -l; m_val <= l; ++m_val) {
@@ -385,38 +423,37 @@ std::vector<Vec3> ForceCalculator::compute_nonlocal_forces(
                         }
 
                         for (size_t ig = 0; ig < npw; ++ig) {
-                            const double g_mag = std::sqrt(gvecs[ig].norm2);
-                            const Vec3& gc = gvecs[ig].cart;
-
-                            // Radial (cached)
                             const double radial = radial_cache[ig];
 
-                            // Phase factor: exp(-i G . tau)
-                            const double gdottau = gc[0] * tau[0]
-                                                 + gc[1] * tau[1]
-                                                 + gc[2] * tau[2];
-                            const complex_t phase{std::cos(gdottau),
-                                                  -std::sin(gdottau)};
+                            // Phase factor: exp(-i (k+G) . tau)
+                            const double kpg_dot_tau =
+                                kpg_cart[ig][0] * tau[0]
+                              + kpg_cart[ig][1] * tau[1]
+                              + kpg_cart[ig][2] * tau[2];
+                            const complex_t phase{std::cos(kpg_dot_tau),
+                                                  -std::sin(kpg_dot_tau)};
 
-                            // Angular: Y_lm(G_hat)
+                            // Angular: Y_lm at (k+G) direction
                             double angular;
-                            if (g_mag < 1.0e-12) {
+                            if (kpg_mag[ig] < 1.0e-12) {
                                 angular = real_spherical_harmonic(
                                     l, m_val, 0.0, 0.0, 0.0);
                             } else {
                                 angular = real_spherical_harmonic(
-                                    l, m_val, gc[0], gc[1], gc[2]);
+                                    l, m_val,
+                                    kpg_cart[ig][0], kpg_cart[ig][1],
+                                    kpg_cart[ig][2]);
                             }
 
                             const complex_t beta_val =
                                 prefactor * il * radial * angular * phase;
                             beta_kg_exp[ie][ig] = beta_val;
 
-                            // d(beta)/d(tau_d) = (-i G_d) * beta
+                            // d(beta)/d(tau_d) = -i(k+G)_d * beta
                             const complex_t neg_i{0.0, -1.0};
                             for (int d = 0; d < 3; ++d) {
                                 dbeta_kg_exp[ie][d][ig] =
-                                    neg_i * gc[d] * beta_val;
+                                    neg_i * kpg_cart[ig][d] * beta_val;
                             }
                         }
 
@@ -426,9 +463,10 @@ std::vector<Vec3> ForceCalculator::compute_nonlocal_forces(
             }
 
             // Loop over bands
+            // Note: occupations already include spin_factor (from FermiSolver),
+            // so we must NOT multiply by spin_factor again here.
             for (int n = 0; n < num_bands; ++n) {
-                const double occ = spin_factor * k_weights[ik]
-                                   * occupations[ik][n];
+                const double occ = k_weights[ik] * occupations[ik][n];
                 if (std::abs(occ) < 1.0e-15) continue;
 
                 const auto& psi = wavefunctions[ik][n];

@@ -33,23 +33,28 @@ class ForceCalculator {
 public:
     /// Force contributions from the local pseudopotential.
     ///
-    /// For each atom I of species s at position tau_I, the local force is:
-    ///   F_local_I = -Omega * sum_{G!=0} V_loc^s(|G|) * n(G) * (-iG) * exp(-iG.tau_I)
-    ///
-    /// The sign comes from: dE_loc/dR_I contains exp(-iG.R_I), whose derivative
-    /// gives -iG * exp(-iG.R_I). The force is F = -dE/dR, so there is an
-    /// overall sign flip.
+    /// The local energy is E_loc = (Ω/N) Σ_G conj(V_loc(G)) · n_FFT(G),
+    /// summed over the full density grid (G² ≤ ecutrho).  The force must
+    /// be the exact derivative of this energy, so it must sum over the
+    /// same G-vector set.
     ///
     /// @param crystal          Crystal structure.
-    /// @param basis            Plane-wave basis set.
     /// @param pseudopotentials Map of pseudopotentials by element symbol.
-    /// @param density_g        Electron density in G-space (PW coefficients).
+    /// @param density_g_full   Electron density on full FFT grid (G-space, un-normalized).
+    /// @param grid_gcart       Cartesian G-vectors for every FFT grid point.
+    /// @param grid_g2          |G|² for every FFT grid point.
+    /// @param ecutrho          Density cutoff (Ry); only G² ≤ ecutrho contribute.
+    /// @param volume           Unit cell volume (bohr³).
+    /// @param num_grid         Total number of FFT grid points.
     /// @return                 Force vector (Ry/bohr) per atom.
     static std::vector<Vec3> compute_local_forces(
         const Crystal& crystal,
-        const PlaneWaveBasis& basis,
         const std::map<std::string, PseudoPotential>& pseudopotentials,
-        const CVec& density_g,
+        const std::vector<complex_t>& density_g_full,
+        const std::vector<Vec3>& grid_gcart,
+        const std::vector<double>& grid_g2,
+        double ecutrho,
+        double volume,
         int num_grid);
 
     /// Force contributions from the nonlocal pseudopotential (KB projectors).

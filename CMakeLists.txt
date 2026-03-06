@@ -57,6 +57,7 @@ find_package(yaml-cpp REQUIRED)
 find_package(HDF5 COMPONENTS C)
 find_package(MPI  COMPONENTS CXX)
 find_package(LibXC)
+find_package(Spglib)
 
 # ============================================================================
 # GPU-specific dependencies
@@ -95,5 +96,6 @@ message(STATUS "  Build Python   : ${KRONOS_BUILD_PYTHON}")
 message(STATUS "  HDF5 found     : ${HDF5_FOUND}")
 message(STATUS "  MPI found      : ${MPI_FOUND}")
 message(STATUS "  LibXC found    : ${LibXC_FOUND}")
+message(STATUS "  Spglib found   : ${Spglib_FOUND}")
 message(STATUS "────────────────────────────────────────────")
 message(STATUS "")

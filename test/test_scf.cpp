@@ -47,7 +47,7 @@ Crystal make_si_diamond() {
 }
 
 // Build a minimal Si-like pseudopotential with only local part (for testing).
-// V_loc(r) = -Z_val * erf(r / r_loc) / r   (a simple Gaussian local PP)
+// V_loc(r) = -2*Z_val * erf(r / r_loc) / r   (Rydberg units: tail is -2Z/r)
 PseudoPotential make_simple_local_pp(double z_val, int npts = 500,
                                      double rmax = 10.0) {
     PseudoPotential pp;
@@ -60,15 +60,15 @@ PseudoPotential make_simple_local_pp(double z_val, int npts = 500,
     double dr = rmax / (npts - 1);
     double r_loc = 0.5;  // bohr
 
+    // Factor of 2 for Rydberg units: V_loc -> -2Z/r at large r
     for (int i = 0; i < npts; ++i) {
         double r = i * dr;
         pp.mesh.r[i] = r;
         pp.mesh.rab[i] = dr;
         if (r < 1e-30) {
-            // V_loc(0) = -Z * 2/(sqrt(pi)*r_loc)
-            pp.vloc[i] = -z_val * 2.0 / (std::sqrt(constants::pi) * r_loc);
+            pp.vloc[i] = -2.0 * z_val * 2.0 / (std::sqrt(constants::pi) * r_loc);
         } else {
-            pp.vloc[i] = -z_val * std::erf(r / r_loc) / r;
+            pp.vloc[i] = -2.0 * z_val * std::erf(r / r_loc) / r;
         }
     }
 

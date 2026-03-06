@@ -374,3 +374,199 @@ TEST(EnergyComponents, LDAandPBEGiveDifferentEnergy) {
     EXPECT_GT(std::abs(r_lda.total_energy_ry - r_pbe.total_energy_ry), 1e-6)
         << "LDA/PBE energy difference too small to be physical";
 }
+
+// ============================================================================
+// Multi-system validation with real pseudopotentials
+// ============================================================================
+
+// Al FCC: simple sp-metal, Gaussian smearing, LDA
+TEST(MultiSystem, AlFCCGammaLDA) {
+    std::map<std::string, PseudoPotential> pps;
+    try {
+        pps["Al"] = parse_upf("../pseudopotentials/Al.pz-vbc.UPF");
+    } catch (...) {
+        GTEST_SKIP() << "Al.pz-vbc.UPF not found";
+    }
+
+    // Al FCC primitive cell: a = 4.05 angstrom
+    const double a = 4.05;
+    Mat3 lattice = {{{0, a/2, a/2}, {a/2, 0, a/2}, {a/2, a/2, 0}}};
+    std::vector<Atom> atoms = {{"Al", 13, {0.0, 0.0, 0.0}}};
+    Crystal crystal(lattice, std::move(atoms));
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 16.0;
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {1, 1, 1};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.05;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-6;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "Al FCC Gamma SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0)
+        << "Total energy should be negative for Al FCC";
+
+    // Al FCC Gamma-only should give ~-4 to -8 Ry per atom (rough LDA range)
+    EXPECT_GT(result.total_energy_ry, -20.0)
+        << "Energy unreasonably low for 1-atom Al FCC";
+
+    std::printf("  Al FCC Gamma: E_total = %.6f Ry, Ewald = %.6f Ry\n",
+                result.total_energy_ry, result.ewald_energy);
+}
+
+TEST(MultiSystem, AlFCC444LDA) {
+    std::map<std::string, PseudoPotential> pps;
+    try {
+        pps["Al"] = parse_upf("../pseudopotentials/Al.pz-vbc.UPF");
+    } catch (...) {
+        GTEST_SKIP() << "Al.pz-vbc.UPF not found";
+    }
+
+    const double a = 4.05;
+    Mat3 lattice = {{{0, a/2, a/2}, {a/2, 0, a/2}, {a/2, a/2, 0}}};
+    std::vector<Atom> atoms = {{"Al", 13, {0.0, 0.0, 0.0}}};
+    Crystal crystal(lattice, std::move(atoms));
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 16.0;
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {4, 4, 4};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.05;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-6;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "Al FCC 4x4x4 SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0);
+
+    // With k-point sampling, Al energy should be more converged
+    // QE reference: ~-4.19 Ry/atom for LDA at ecut=16 with 4x4x4
+    std::printf("  Al FCC 4x4x4: E_total = %.6f Ry, Ewald = %.6f Ry, %d IBZ k-points\n",
+                result.total_energy_ry, result.ewald_energy,
+                static_cast<int>(result.eigenvalues.size()));
+}
+
+// Cu FCC: d-electron metal, LDA with smearing
+TEST(MultiSystem, CuFCCGammaLDA) {
+    std::map<std::string, PseudoPotential> pps;
+    try {
+        pps["Cu"] = parse_upf("../pseudopotentials/Cu.pz-d-hgh.UPF");
+    } catch (...) {
+        GTEST_SKIP() << "Cu.pz-d-hgh.UPF not found";
+    }
+
+    // Cu FCC primitive cell: a = 3.61 angstrom
+    const double a = 3.61;
+    Mat3 lattice = {{{0, a/2, a/2}, {a/2, 0, a/2}, {a/2, a/2, 0}}};
+    std::vector<Atom> atoms = {{"Cu", 29, {0.0, 0.0, 0.0}}};
+    Crystal crystal(lattice, std::move(atoms));
+
+    CalculationParams calc;
+    calc.type = CalculationType::SCF;
+    calc.ecutwfc = 30.0;
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid = {1, 1, 1};
+    calc.smearing = SmearingType::Gaussian;
+    calc.degauss = 0.02;
+    ConvergenceParams conv;
+    conv.energy_threshold = 1e-6;
+    conv.density_threshold = 1.0;
+    conv.max_scf_steps = 100;
+
+    SCFSolver solver(crystal, calc, conv, pps);
+    auto result = solver.solve();
+
+    EXPECT_TRUE(result.converged) << "Cu FCC Gamma SCF should converge";
+    if (!result.converged) return;
+
+    EXPECT_TRUE(std::isfinite(result.total_energy_ry));
+    EXPECT_LT(result.total_energy_ry, 0.0)
+        << "Total energy should be negative for Cu FCC";
+
+    std::printf("  Cu FCC Gamma: E_total = %.6f Ry, %zu bands\n",
+                result.total_energy_ry,
+                result.eigenvalues.empty() ? 0 : result.eigenvalues[0].size());
+}
+
+// Al forces at non-equilibrium: displacement + FD validation
+TEST(MultiSystem, AlFCCForceValidation) {
+    std::map<std::string, PseudoPotential> pps;
+    try {
+        pps["Al"] = parse_upf("../pseudopotentials/Al.pz-vbc.UPF");
+    } catch (...) {
+        GTEST_SKIP() << "Al.pz-vbc.UPF not found";
+    }
+
+    // Build Al FCC with 2-atom basis and one atom displaced
+    // Use conventional 2-atom cell for nontrivial forces
+    const double a = 4.05;
+    auto make_al2 = [&](double delta) {
+        Mat3 lattice = {{{a, 0, 0}, {0, a, 0}, {0, 0, a}}};
+        std::vector<Atom> atoms = {
+            {"Al", 13, {0.0, 0.0, 0.0}},
+            {"Al", 13, {0.5, 0.5, 0.0}},
+        };
+        atoms[0].position[0] += delta;
+        return Crystal(lattice, std::move(atoms));
+    };
+
+    auto run_al = [&](double delta) {
+        Crystal crystal = make_al2(delta);
+        CalculationParams calc;
+        calc.type = CalculationType::SCF;
+        calc.ecutwfc = 12.0;
+        calc.xc_functional = "LDA_PZ";
+        calc.kpoints.grid = {1, 1, 1};
+        calc.smearing = SmearingType::Gaussian;
+        calc.degauss = 0.05;
+        ConvergenceParams conv;
+        conv.energy_threshold = 1e-8;
+        conv.density_threshold = 1.0;
+        conv.max_scf_steps = 100;
+        SCFSolver solver(crystal, calc, conv, pps);
+        return solver.solve();
+    };
+
+    const double delta0 = 0.01;
+    const double eps = 0.001;
+    auto r_0 = run_al(delta0);
+    auto r_p = run_al(delta0 + eps);
+    auto r_m = run_al(delta0 - eps);
+
+    if (!r_0.converged || !r_p.converged || !r_m.converged) {
+        GTEST_SKIP() << "Al SCF did not converge";
+    }
+
+    // eps in Bohr: delta is fractional along x, lattice[0] = (a, 0, 0)
+    double a_bohr = a * constants::angstrom_to_bohr;
+    double eps_bohr = eps * a_bohr;
+
+    double f_fd = -(r_p.total_energy_ry - r_m.total_energy_ry) / (2.0 * eps_bohr);
+    double f_analytic = r_0.forces[0][0]; // force along x
+
+    double tol = std::max(0.10 * std::abs(f_analytic), 0.005);
+    std::printf("  Al force: analytic=%+.6f  FD=%+.6f  diff=%.2e\n",
+                f_analytic, f_fd, std::abs(f_analytic - f_fd));
+
+    EXPECT_NEAR(f_analytic, f_fd, tol)
+        << "Al force: analytic=" << f_analytic << " FD=" << f_fd;
+}

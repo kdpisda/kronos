@@ -10,7 +10,7 @@ KRONOS computes ground-state total energy, electronic density, Kohn-Sham eigenva
 - **LDA** (Perdew-Zunger) and **GGA** (PBE, PBEsol) exchange-correlation via built-in routines or libxc
 - **UPF v2 pseudopotentials** (norm-conserving)
 - **Davidson eigensolver** with Pulay/DIIS density mixing
-- **Monkhorst-Pack k-point sampling** with time-reversal symmetry reduction
+- **Monkhorst-Pack k-point sampling** with spglib space-group symmetry IBZ reduction
 - **Ewald summation** for ion-ion interactions
 - **Hellmann-Feynman forces** and **BFGS geometry optimization**
 - **Band structure** and **density of states** post-processing
@@ -124,14 +124,25 @@ src/
   postprocessing/  Band structure, density of states
   gpu/         GPU abstraction layer (CUDA/HIP stubs for CPU builds)
   utils/       Timer/profiling, structured logger
-test/          GoogleTest suite (258 tests)
+test/          GoogleTest suite (288 tests)
 examples/      Example input files
+docs/          Architecture, user guide, developer guide, API reference, physics notes
 cmake/         CMake find modules (FFTW3, LibXC)
 ```
 
+## Documentation
+
+See the `docs/` directory for detailed documentation:
+
+- [Architecture](docs/architecture.md) -- SCF flowchart, component diagram, data flow, source map
+- [User Guide](docs/user_guide.md) -- Quick start, YAML reference, examples, troubleshooting
+- [Developer Guide](docs/developer_guide.md) -- Directory layout, adding features, test conventions
+- [API Reference](docs/api_reference.md) -- All public classes/structs by module
+- [Physics Notes](docs/physics_notes.md) -- KS-DFT, PW formalism, pseudopotentials, Ewald
+
 ## Testing
 
-The test suite covers all major subsystems with 258 tests:
+The test suite covers all major subsystems with 264+ tests:
 
 ```bash
 cd build && ctest --output-on-failure
@@ -140,23 +151,38 @@ cd build && ctest --output-on-failure
 ./build/test_basis --gtest_filter='PlaneWaveBasis.SiBulkBasisSize'
 ```
 
-| Test File | Tests | Coverage |
-|-----------|-------|----------|
-| `test_input` | 29 | YAML parsing, validation, edge cases |
-| `test_crystal` | 19 | Lattice, volume, coordinate transforms |
-| `test_basis` | 17 | G-vectors, kinetic energies, cutoff |
-| `test_fft` | 11 | Forward/inverse, Parseval, scatter/gather |
-| `test_upf` | 24 | UPF parsing, validation, round-trip |
-| `test_hamiltonian` | 12 | Kinetic, Hermiticity, linearity |
-| `test_solvers` | 19 | Davidson, Pulay mixing, Fermi level |
-| `test_physics` | 29 | Hartree, XC, Ewald, spherical harmonics |
-| `test_scf` | 25 | SCF convergence, energy components |
-| `test_postprocessing` | 16 | Band structure, DOS |
-| `test_forces` | 10 | Hellmann-Feynman forces, BFGS |
-| `test_output` | 10 | JSON output format, atomic writes |
-| `test_gradient` | 7 | GGA sigma, potential correction |
-| `test_utils` | 14 | Timer, logger, constants |
-| `test_unimplemented` | 16 | Skip stubs for future features |
+| Category | Tests | Description |
+|----------|-------|-------------|
+| Unit tests | 200+ | Basis, FFT, parsing, potentials, solvers, Hamiltonian |
+| Physics invariants | 14 | Hermiticity, sum rules, symmetry, Parseval |
+| Convergence studies | 8 | Ecut convergence, k-grid convergence, mixing |
+| Regression baselines | 8 | Frozen energy values, Ewald, forces, Madelung |
+| Forces | 12 | Real PP FD validation, Ewald FD, Newton's 3rd law, BFGS |
+| Multi-system | 4 | Al FCC, Cu FCC (d-electrons), force validation |
+| Validation | 18 | QE-matched Si diamond, physics checks |
+
+## Validation
+
+KRONOS has been validated against Quantum ESPRESSO for silicon diamond with the `Si.pz-vbc.UPF` pseudopotential (Perdew-Zunger LDA, norm-conserving):
+
+| Configuration | KRONOS | QE Reference | Difference |
+|---------------|--------|-------------|------------|
+| Gamma-only, ecut=12 | -14.51875 Ry | -14.51876 Ry | 10 uRy (**0.07 meV/atom**) |
+| 4x4x4 shifted, ecut=18 | -15.8439 Ry | -15.8445 Ry | 0.6 mRy (4.2 meV/atom) |
+| Ewald energy | -16.8998 Ry | -16.8998 Ry | < 10 uRy |
+
+All energy components (kinetic, Hartree, XC, nonlocal PP) individually agree with QE.
+The Gamma-only result matches to single-digit micro-Rydberg precision, confirming the
+core algorithms are essentially exact.
+
+Hellmann-Feynman forces validated against finite-difference to **5 significant figures**.
+Multi-system validation passes for Al FCC (sp-metal) and Cu FCC (d-metal) in addition
+to Si diamond. See [VALIDATION.md](VALIDATION.md) for details.
+
+```bash
+# Reproduce the validation calculation
+./build/src/kronos examples/si_qe_validation.yaml
+```
 
 ## Roadmap
 

@@ -48,7 +48,8 @@ std::string OutputWriter::to_json_string(const SCFResult& result,
     ss << "    \"xc_energy\": " << result.xc_energy << ",\n";
     ss << "    \"local_pp_energy\": " << result.local_pp_energy << ",\n";
     ss << "    \"nonlocal_pp_energy\": " << result.nonlocal_pp_energy << ",\n";
-    ss << "    \"ewald_energy\": " << result.ewald_energy << "\n";
+    ss << "    \"ewald_energy\": " << result.ewald_energy << ",\n";
+    ss << "    \"smearing_energy\": " << result.smearing_energy << "\n";
     ss << "  },\n";
 
     // Crystal info

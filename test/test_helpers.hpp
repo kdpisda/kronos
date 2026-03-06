@@ -74,8 +74,8 @@ inline Crystal make_nacl_crystal(double a_ang = 5.64) {
 // Pseudopotential helpers
 // ============================================================================
 
-/// Minimal analytic Si pseudopotential with Gaussian local part.
-/// V_loc(r) = -Z_val * erf(r / r_loc) / r
+/// Minimal analytic Si pseudopotential with Coulomb-tailed local part.
+/// V_loc(r) = -2*Z_val * erf(r / r_loc) / r   (Rydberg units: tail is -2Z/r)
 inline PseudoPotential make_si_pseudopotential(double z_val = 4.0,
                                                 int npts = 500,
                                                 double rmax = 10.0) {
@@ -100,14 +100,15 @@ inline PseudoPotential make_si_pseudopotential(double z_val = 4.0,
     double dr = rmax / (npts - 1);
     double r_loc = 0.5;
 
+    // Factor of 2 for Rydberg units: V_loc -> -2Z/r at large r
     for (int i = 0; i < npts; ++i) {
         double r = i * dr;
         pp.mesh.r[i] = r;
         pp.mesh.rab[i] = dr;
         if (r < 1e-30) {
-            pp.vloc[i] = -z_val * 2.0 / (std::sqrt(constants::pi) * r_loc);
+            pp.vloc[i] = -2.0 * z_val * 2.0 / (std::sqrt(constants::pi) * r_loc);
         } else {
-            pp.vloc[i] = -z_val * std::erf(r / r_loc) / r;
+            pp.vloc[i] = -2.0 * z_val * std::erf(r / r_loc) / r;
         }
     }
 
@@ -217,7 +218,7 @@ inline Crystal make_cscl_crystal(double a_ang = 4.12) {
     return Crystal(lattice, std::move(atoms));
 }
 
-/// Minimal H pseudopotential (z_val=1, Gaussian local)
+/// Minimal H pseudopotential (z_val=1, Coulomb-tailed local, Rydberg units)
 inline PseudoPotential make_h_pseudopotential(int npts = 500, double rmax = 10.0) {
     PseudoPotential pp;
     pp.element = "H";
@@ -240,14 +241,15 @@ inline PseudoPotential make_h_pseudopotential(int npts = 500, double rmax = 10.0
     double dr = rmax / (npts - 1);
     double r_loc = 0.5;
 
+    // Factor of 2 for Rydberg units: V_loc -> -2Z/r at large r
     for (int i = 0; i < npts; ++i) {
         double r = i * dr;
         pp.mesh.r[i] = r;
         pp.mesh.rab[i] = dr;
         if (r < 1e-30) {
-            pp.vloc[i] = -1.0 * 2.0 / (std::sqrt(constants::pi) * r_loc);
+            pp.vloc[i] = -2.0 * 2.0 / (std::sqrt(constants::pi) * r_loc);
         } else {
-            pp.vloc[i] = -1.0 * std::erf(r / r_loc) / r;
+            pp.vloc[i] = -2.0 * std::erf(r / r_loc) / r;
         }
     }
 

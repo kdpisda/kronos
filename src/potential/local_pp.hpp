@@ -35,9 +35,6 @@ public:
     [[nodiscard]] double energy(const CVec& density_g, double volume,
                                 int num_grid) const;
 
-private:
-    CVec vloc_g_;
-
     /// Radial Fourier transform of V_loc(r) at wavevector magnitude q,
     /// using Coulomb tail subtraction for numerical stability.
     ///
@@ -64,6 +61,9 @@ private:
     /// @param g_cart          Cartesian G-vector (1/bohr).
     static complex_t structure_factor(const std::vector<Vec3>& positions_cart,
                                       const Vec3& g_cart);
+
+private:
+    CVec vloc_g_;
 };
 
 } // namespace kronos

@@ -152,8 +152,10 @@ double EwaldCalculator::real_space_energy(const Crystal& crystal,
 // ---------------------------------------------------------------------------
 // recip_space_energy
 //
-// E_recip = (e^2 * 4*pi / V) sum_{G!=0} exp(-|G|^2/(4*eta^2)) / |G|^2
+// E_recip = (e^2/(2V)) * 4*pi * sum_{G!=0} exp(-|G|^2/(4*eta^2)) / |G|^2
 //           * |S(G)|^2
+//
+// The factor 1/2 accounts for double-counting pairs in the reciprocal sum.
 //
 // where S(G) = sum_i Z_i exp(-i G . r_i)
 // ---------------------------------------------------------------------------
@@ -181,7 +183,8 @@ double EwaldCalculator::recip_space_energy(const Crystal& crystal,
     const int m3max = static_cast<int>(std::ceil(gcut / vec_len(b[2]))) + 1;
 
     const double four_eta2 = 4.0 * eta * eta;
-    const double prefactor = e2 * constants::four_pi / volume;
+    // (e^2/2) * (4*pi/V) = e2 * 2*pi / V
+    const double prefactor = 0.5 * e2 * constants::four_pi / volume;
 
     double esum = 0.0;
 
@@ -241,7 +244,8 @@ double EwaldCalculator::self_energy(const std::vector<double>& charges,
 // ---------------------------------------------------------------------------
 // charged_correction
 //
-// E_charged = -e^2 * pi / (V * eta^2) * (sum_i Z_i)^2
+// E_charged = -(e^2/2) * pi / (V * eta^2) * (sum_i Z_i)^2
+//           = -pi / (V * eta^2) * (sum_i Z_i)^2   [in Rydberg]
 //
 // This is nonzero only for charged unit cells (rare, but handle correctly).
 // ---------------------------------------------------------------------------
@@ -255,7 +259,7 @@ double EwaldCalculator::charged_correction(const std::vector<double>& charges,
 
     if (std::abs(zsum) < 1.0e-14) return 0.0;
 
-    return -e2 * constants::pi / (volume * eta * eta) * zsum * zsum;
+    return -0.5 * e2 * constants::pi / (volume * eta * eta) * zsum * zsum;
 }
 
 // ---------------------------------------------------------------------------
@@ -366,10 +370,10 @@ std::vector<Vec3> EwaldCalculator::real_space_forces(const Crystal& crystal,
 //
 //   So d|S|^2/dr_i = 2 G Z_i [sr sin(phi_i) + si cos(phi_i)]
 //
-//   dE/dr_i = (e2 8pi/V) Z_i sum_{G!=0} [exp(-G^2/(4eta^2))/G^2]
+//   dE/dr_i = -(e2 4pi/V) Z_i sum_{G!=0} [exp(-G^2/(4eta^2))/G^2]
 //             * G * [sr sin(phi_i) + si cos(phi_i)]
 //
-//   F_i = -dE/dr_i = -(e2 8pi/V) Z_i sum_{G!=0} ...
+//   F_i = -dE/dr_i = +(e2 4pi/V) Z_i sum_{G!=0} ...
 //         * G * [sr sin(phi_i) + si cos(phi_i)]
 // ---------------------------------------------------------------------------
 std::vector<Vec3> EwaldCalculator::recip_space_forces(const Crystal& crystal,
@@ -393,7 +397,8 @@ std::vector<Vec3> EwaldCalculator::recip_space_forces(const Crystal& crystal,
     const int m2max = static_cast<int>(std::ceil(gcut / vec_len(bmat[1]))) + 1;
     const int m3max = static_cast<int>(std::ceil(gcut / vec_len(bmat[2]))) + 1;
 
-    const double prefactor = e2 * 8.0 * constants::pi / volume;
+    // F_i = +(e2*4pi/V) * Z_i * sum_{G!=0} (exp/G^2) * G * imag_term
+    const double prefactor = e2 * constants::four_pi / volume;
 
     std::vector<Vec3> forces(natoms, {0.0, 0.0, 0.0});
 
@@ -427,12 +432,10 @@ std::vector<Vec3> EwaldCalculator::recip_space_forces(const Crystal& crystal,
                     const double sin_i = std::sin(phase_i);
                     const double cos_i = std::cos(phase_i);
 
-                    // Im[S^* exp(-iG.r_i)] = -[sr sin(G.r_i) + si cos(G.r_i)]
-                    // The term in the force is:
-                    //   [sr sin(G.r_i) + si cos(G.r_i)]
+                    // [sr sin(G.r_i) + si cos(G.r_i)]
                     const double imag_term = sr * sin_i + si * cos_i;
 
-                    const double coeff = -prefactor * charges[i]
+                    const double coeff = prefactor * charges[i]
                                          * gaussian_over_g2 * imag_term;
 
                     for (int d = 0; d < 3; ++d) {

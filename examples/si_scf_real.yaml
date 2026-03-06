@@ -1,0 +1,31 @@
+# Si diamond SCF calculation with real pseudopotential
+# Uses Si.pz-vbc.UPF (Perdew-Zunger LDA, norm-conserving)
+# FCC primitive cell, experimental lattice constant a = 5.431 A
+#
+# Reference: QE tutorials use this exact setup for validation
+
+system:
+  # FCC primitive lattice vectors: a/2*(0,1,1), a/2*(1,0,1), a/2*(1,1,0)
+  lattice:
+    - [0.0, 2.7155, 2.7155]
+    - [2.7155, 0.0, 2.7155]
+    - [2.7155, 2.7155, 0.0]
+  atoms:
+    - {symbol: Si, position: [0.0, 0.0, 0.0]}
+    - {symbol: Si, position: [0.25, 0.25, 0.25]}
+
+calculation:
+  type: scf
+  ecutwfc: 30.0
+  xc: LDA_PZ
+  kpoints: [4, 4, 4, 0, 0, 0]
+  smearing: gaussian
+  degauss: 0.01
+
+pseudopotentials:
+  Si: pseudopotentials/Si.pz-vbc.UPF
+
+convergence:
+  energy: 1e-6
+  density: 1e-6
+  max_scf_steps: 100

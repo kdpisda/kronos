@@ -1,0 +1,34 @@
+# Si diamond - validation against Quantum ESPRESSO example01
+#
+# QE reference (example01/run_example):
+#   celldm(1) = 10.20, ecutwfc = 18 Ry, ibrav=2
+#   K_POINTS: 10 IBZ points from 4x4x4 shifted MP grid
+#   No smearing (semiconductor with gap)
+#   Total energy = -15.8445 Ry
+#
+system:
+  lattice:
+    # celldm(1) = 10.20 bohr => a/2 = 5.10 * 0.529177210903 = 2.69880378 Angstrom
+    # FCC primitive cell (our convention: all positive)
+    - [0.0, 2.69880378, 2.69880378]
+    - [2.69880378, 0.0, 2.69880378]
+    - [2.69880378, 2.69880378, 0.0]
+  atoms:
+    - {symbol: Si, position: [0.0, 0.0, 0.0]}
+    - {symbol: Si, position: [0.25, 0.25, 0.25]}
+
+calculation:
+  type: scf
+  ecutwfc: 18.0
+  xc: LDA_PZ
+  # 4x4x4 shifted MP grid = QE's 10 IBZ k-points
+  kpoints: [4, 4, 4, 1, 1, 1]
+  smearing: none
+
+pseudopotentials:
+  Si: pseudopotentials/Si.pz-vbc.UPF
+
+convergence:
+  energy: 1e-8
+  density: 1.0
+  max_scf_steps: 100

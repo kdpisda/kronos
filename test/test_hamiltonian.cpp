@@ -251,10 +251,17 @@ TEST(Hamiltonian, KineticDiagonalMatchesBasisKinetic) {
     Vec3 k = {0.1, 0.2, 0.3};
     auto diag = fixture.ham.kinetic_diagonal(k);
     auto ke = fixture.basis.kinetic_energies(k);
+    double ecut = fixture.basis.ecutwfc();
 
     ASSERT_EQ(diag.size(), ke.size());
     for (size_t i = 0; i < diag.size(); ++i) {
-        EXPECT_NEAR(diag[i], ke[i], 1e-12);
+        if (ke[i] <= ecut + 1e-6) {
+            // Active G-vectors: kinetic diagonal matches basis kinetic energy
+            EXPECT_NEAR(diag[i], ke[i], 1e-12);
+        } else {
+            // Inactive G-vectors: wall energy for Davidson preconditioner
+            EXPECT_NEAR(diag[i], 1e4, 1e-12);
+        }
     }
 }
 

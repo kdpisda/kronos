@@ -69,44 +69,15 @@ void FFTGrid::destroy_plans() {
 // -------------------------------------------------------------------------
 
 FFTGrid::FFTGrid(const PlaneWaveBasis& basis, double ecutrho) {
-    // Compute max miller indices for the density grid based on ecutrho.
-    // This replicates the logic from PlaneWaveBasis::enumerate_gvectors
-    // but uses ecutrho instead of ecutwfc:
-    //   G_max_rho = sqrt(2 * ecutrho)
-    //   max_miller_rho[i] = floor(G_max_rho / |b_i|) + 1
-    //
-    // The FFT grid must accommodate G-vectors from -max_miller to +max_miller,
-    // so the minimum grid size is 2*max_miller+1 in each direction.
-
-    double g_max_rho = std::sqrt(2.0 * ecutrho);
-
-    // Extract |b_i| (reciprocal lattice vector norms) from the basis G-vectors.
-    // The G-vector with miller indices (1,0,0) has Cartesian length |b_0|, etc.
-    std::array<double, 3> b_norm{0.0, 0.0, 0.0};
-    const auto& gvecs = basis.gvectors();
-    for (const auto& gv : gvecs) {
-        if (gv.h == 1 && gv.k == 0 && gv.l == 0) {
-            b_norm[0] = std::sqrt(gv.norm2);
-        }
-        if (gv.h == 0 && gv.k == 1 && gv.l == 0) {
-            b_norm[1] = std::sqrt(gv.norm2);
-        }
-        if (gv.h == 0 && gv.k == 0 && gv.l == 1) {
-            b_norm[2] = std::sqrt(gv.norm2);
-        }
-        if (b_norm[0] > 0 && b_norm[1] > 0 && b_norm[2] > 0) break;
-    }
-
+    // Scale the wavefunction max-miller indices by sqrt(ecutrho/ecutwfc).
+    // PlaneWaveBasis already computes max_miller using the QE formula
+    // floor(G_max_wfc / |b_i|) + 1, so scaling by 2 (for ecutrho = 4*ecutwfc)
+    // gives a grid that comfortably fits all density G-vectors and reduces
+    // aliasing in the V_eff × ψ product.
     auto mm_wfc = basis.max_miller();
+    double scale = std::sqrt(ecutrho / basis.ecutwfc());
     for (int i = 0; i < 3; ++i) {
-        int max_miller_rho;
-        if (b_norm[i] > 1e-15) {
-            max_miller_rho = static_cast<int>(std::floor(g_max_rho / b_norm[i])) + 1;
-        } else {
-            // Fallback: scale from wavefunction max_miller
-            max_miller_rho = static_cast<int>(
-                std::ceil(mm_wfc[i] * std::sqrt(ecutrho / basis.ecutwfc())));
-        }
+        int max_miller_rho = static_cast<int>(std::ceil(mm_wfc[i] * scale));
         dims_[i] = next_fft_friendly(2 * max_miller_rho + 1);
     }
     create_plans();

@@ -1,10 +1,12 @@
 #include "potential/nonlocal_pp.hpp"
 #include "core/constants.hpp"
 #include "core/spherical_harmonics.hpp"
+#include "utils/radial_integral.hpp"
 
 #include <cassert>
 #include <cmath>
 #include <complex>
+#include <vector>
 
 namespace kronos {
 
@@ -86,16 +88,19 @@ double NonlocalPP::beta_of_q(int l, int cutoff_index,
                               static_cast<int>(beta_values.size()));
     if (npts <= 0) return 0.0;
 
-    double integral = 0.0;
-
+    // UPF stores r*beta(r) on the radial grid.
+    // The 3D Fourier-Bessel transform is:
+    //   beta_l(q) = integral r^2 beta_l(r) j_l(qr) dr
+    // With beta_values = r*beta(r): r^2 * beta(r) = r * beta_values
+    std::vector<double> integrand(npts);
     for (int i = 0; i < npts; ++i) {
         const double ri = mesh.r[i];
         const double qr = q * ri;
         const double jl = sbessel(l, qr);
-        integral += ri * ri * beta_values[i] * jl * mesh.rab[i];
+        integrand[i] = ri * beta_values[i] * jl;
     }
 
-    return integral;
+    return simpson_radial(integrand, mesh.rab, npts);
 }
 
 // ===================================================================
@@ -293,11 +298,31 @@ std::vector<CVec> NonlocalPP::compute_beta_kg(
 }
 
 // ===================================================================
+// prepare_kpoint  --  precompute and cache beta projectors
+// ===================================================================
+
+void NonlocalPP::prepare_kpoint(const Vec3& k_frac)
+{
+    // Check if already cached for this k-point
+    if (std::abs(cached_kpoint_[0] - k_frac[0]) < 1e-14 &&
+        std::abs(cached_kpoint_[1] - k_frac[1]) < 1e-14 &&
+        std::abs(cached_kpoint_[2] - k_frac[2]) < 1e-14) {
+        return;  // already cached
+    }
+
+    cached_beta_kg_.resize(atom_data_.size());
+    for (size_t ia = 0; ia < atom_data_.size(); ++ia) {
+        cached_beta_kg_[ia] = compute_beta_kg(atom_data_[ia], k_frac);
+    }
+    cached_kpoint_ = k_frac;
+}
+
+// ===================================================================
 // apply  --  V_NL |psi>
 // ===================================================================
 //
 // For each atom a:
-//   1. Compute beta_kg for this k-point
+//   1. Use cached beta_kg for this k-point
 //   2. proj_j = <beta_j^a | psi> = sum_G conj(beta_j^a(G)) * psi(G)
 //   3. c_i = sum_j D_{ij}^a * proj_j
 //   4. vnl_psi(G) += sum_i c_i * beta_i^a(G)
@@ -310,11 +335,22 @@ CVec NonlocalPP::apply(const CVec& psi_g, const Vec3& k_frac) const
     const size_t npw = basis_.num_pw();
     assert(psi_g.size() == npw);
 
+    // Ensure projectors are cached for this k-point
+    const bool have_cache =
+        (std::abs(cached_kpoint_[0] - k_frac[0]) < 1e-14 &&
+         std::abs(cached_kpoint_[1] - k_frac[1]) < 1e-14 &&
+         std::abs(cached_kpoint_[2] - k_frac[2]) < 1e-14);
+
     CVec vnl_psi(npw, complex_t{0.0, 0.0});
 
-    for (const auto& ad : atom_data_) {
+    for (size_t ia = 0; ia < atom_data_.size(); ++ia) {
+        const auto& ad = atom_data_[ia];
         const int nproj = ad.num_expanded;
-        const auto beta_kg = compute_beta_kg(ad, k_frac);
+
+        // Use cached projectors if available, otherwise compute on the fly
+        const auto& beta_kg = have_cache
+            ? cached_beta_kg_[ia]
+            : compute_beta_kg(ad, k_frac);
 
         // Step 1: compute projections <beta_j | psi>
         std::vector<complex_t> proj(nproj, complex_t{0.0, 0.0});

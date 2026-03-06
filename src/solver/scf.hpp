@@ -29,6 +29,7 @@ struct SCFResult {
     double local_pp_energy{0.0};
     double nonlocal_pp_energy{0.0};
     double ewald_energy{0.0};      // ion-ion Ewald energy
+    double smearing_energy{0.0};   // -TS entropy correction
 
     // Per-atom forces (Ry/bohr) — total Hellmann-Feynman forces
     std::vector<Vec3> forces;

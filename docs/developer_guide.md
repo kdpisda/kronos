@@ -1,227 +1,273 @@
 # KRONOS Developer Guide
 
-## Directory Layout
+## 1. Directory Layout and Module Organization
 
 ```
 kronos/
+├── CMakeLists.txt              # Root: project options, find_package, subdirs
 ├── src/
-│   ├── core/           # Fundamental types, constants, Crystal class
-│   ├── basis/          # Plane-wave basis and FFT grid
-│   ├── io/             # Input parsing (YAML), output (JSON/HDF5), UPF reader
-│   ├── potential/      # All potential terms: Hartree, XC, local/nonlocal PP, Ewald
-│   ├── solver/         # SCF loop, Davidson, mixing, Fermi solver, BFGS
-│   ├── hamiltonian/    # H|ψ⟩ application (the computational kernel)
-│   ├── postprocessing/ # Band structure, DOS
-│   ├── gpu/            # GPU abstraction layer (CUDA/HIP stubs for CPU builds)
-│   └── utils/          # Timer, logger
-├── test/               # GoogleTest test suite
-├── examples/           # Example input files
-├── docs/               # Documentation
-└── CMakeLists.txt      # Top-level build
+│   ├── CMakeLists.txt          # Builds kronos_lib (static) + kronos executable
+│   ├── main.cpp                # Entry point: parse YAML, run SCF, write JSON
+│   ├── core/                   # types.hpp, constants.hpp, crystal, element_data, spherical_harmonics
+│   ├── basis/                  # plane_wave (G-vector enumeration), fft_grid (FFTW3), kpoints (MP grid)
+│   ├── io/                     # input_parser (YAML), upf_parser (UPF), output_writer (JSON/HDF5)
+│   ├── potential/              # hartree, xc, local_pp, nonlocal_pp, ewald, gradient, forces
+│   ├── solver/                 # scf, davidson, mixing (Pulay/DIIS), fermi, bfgs
+│   ├── hamiltonian/            # H|psi> application: kinetic + local (FFT) + nonlocal (GEMM)
+│   ├── postprocessing/         # band_structure, dos
+│   ├── gpu/                    # fft.hpp, blas.hpp, memory.hpp, gpu_stubs.cpp
+│   └── utils/                  # timer (KRONOS_TIMER macro), logger (structured JSON)
+├── test/                       # GoogleTest suite (15 executables)
+│   ├── CMakeLists.txt          # FetchContent(googletest v1.14), kronos_add_test()
+│   ├── test_helpers.hpp        # Shared crystals, pseudopotentials, tolerances
+│   └── test_*.cpp              # One file per module
+├── examples/                   # YAML input files
+├── pseudopotentials/           # UPF files
+└── docs/                       # Documentation
 ```
 
-Each module in `src/` is a directory containing `.hpp` (public API) and `.cpp` (implementation) files. Headers are included via module-relative paths: `#include "core/types.hpp"`.
+Each `src/` subdirectory contains `.hpp`/`.cpp` pairs. Headers use module-relative includes: `#include "core/types.hpp"`. Adding a `.cpp` to any `src/` subdirectory is picked up automatically by `GLOB_RECURSE` in `src/CMakeLists.txt` (re-run cmake after adding files).
 
----
+The dependency flow is strictly layered: `core` <- `basis` <- `potential` <- `hamiltonian` <- `solver` <- `io/main`. The `gpu/` namespace is the sole bridge to vendor APIs. `utils/` is used everywhere.
 
-## How to Add a New XC Functional
 
-1. **Check libxc support**: If the functional exists in libxc, it may already work. Check `XCEvaluator::XCEvaluator()` in `src/potential/xc.cpp` for the name-to-libxc-id mapping.
+## 2. How to Add a New XC Functional
 
-2. **Add name mapping** in `xc.cpp`:
-   ```cpp
-   // In the constructor's name resolution:
-   if (name == "YOUR_FUNC") {
-       // Set exchange and correlation IDs from libxc
-       xc_id = XC_GGA_X_YOUR_FUNC;  // or LDA_X_...
-       correlation_id = XC_GGA_C_YOUR_FUNC;
-   }
-   ```
+**Step 1.** In `src/potential/xc.cpp`, locate `XCEvaluator::init_functional()` and add a branch:
 
-3. **Handle LDA vs GGA**: If it's a GGA functional, ensure `is_gga()` returns `true` so the SCF loop computes |∇ρ|² via `GGAGradient` before calling `evaluate_gga()`.
+```cpp
+} else if (name_ == "BLYP") {
+    is_gga_ = true;
+#ifdef KRONOS_HAS_LIBXC
+    x_func_id_ = XC_GGA_X_B88;
+    c_func_id_ = XC_GGA_C_LYP;
+#endif
+}
+```
 
-4. **Add built-in fallback** (optional): If you want the functional to work without libxc, add the analytic expressions in `xc.cpp`'s built-in path.
+**Step 2.** Set `is_gga_ = true` for GGA functionals. The SCF loop checks `is_gga()` to compute density gradients via `GGAGradient` and call `evaluate_gga()` instead of `evaluate()`.
 
-5. **Add input validation** in `src/io/input_parser.cpp`: Add the new name to the allowed values for `xc_functional`.
+**Step 3.** Register the name as an allowed value in `src/io/input_parser.cpp`.
 
-6. **Add tests** in `test/test_scf.cpp` or `test/test_physics.cpp`:
-   ```cpp
-   TEST(XCFunctional, YourFuncProperties) {
-       XCEvaluator xc("YOUR_FUNC");
-       // Test energy, potential at known densities
-   }
-   ```
+**Step 4.** (Optional) For libxc-free operation, add analytic implementations alongside `builtin::lda_x` and `builtin::lda_c_pz` in `xc.cpp`, routing to them in the `#else` path.
 
----
+**Step 5.** Add tests:
 
-## How to Add a New Potential Term
+```cpp
+TEST(XCFunctional, BLYPSmokeTest) {
+    kronos::XCEvaluator xc("BLYP");
+    EXPECT_TRUE(xc.is_gga());
+    RVec rho(100, 0.01), sigma(100, 1e-4);
+    auto result = xc.evaluate_gga(rho, sigma, 100.0);
+    EXPECT_LT(result.energy, 0.0);
+}
+```
 
-1. **Create files**: `src/potential/your_potential.hpp` and `.cpp`
+Currently supported: `LDA_PZ`, `LDA_PW`, `PBE`, `PBEsol`.
 
-2. **Define the class**:
-   ```cpp
-   class YourPotential {
-   public:
-       YourPotential(const Crystal& crystal, const PlaneWaveBasis& basis, ...);
-       CVec compute(const CVec& density_g) const;  // V(G) in G-space
-       double energy(const CVec& density_g, ...) const;  // Energy in Ry
-   };
-   ```
 
-3. **Integrate into SCF** in `src/solver/scf.cpp`:
-   - Construct the potential object in `SCFSolver::SCFSolver()`
-   - Call `compute()` in the SCF loop to get V(G)
-   - Add V(G) to `V_eff`
-   - Call `energy()` and add to `SCFResult`
+## 3. How to Add a New Potential Type
 
-4. **Add to CMakeLists.txt**: The file is automatically picked up if it's in `src/potential/`.
+**Step 1.** Create `src/potential/your_potential.hpp` and `.cpp`:
 
-5. **Write tests**: Add a test file or extend `test/test_physics.cpp`.
+```cpp
+#pragma once
+#include "core/types.hpp"
+#include "core/crystal.hpp"
+#include "basis/plane_wave.hpp"
+namespace kronos {
+class YourPotential {
+public:
+    YourPotential(const Crystal& crystal, const PlaneWaveBasis& basis);
+    [[nodiscard]] CVec compute(const CVec& density_g) const;   // V(G)
+    [[nodiscard]] double energy(const CVec& density_g) const;   // Ry
+private:
+    const Crystal& crystal_;
+    const PlaneWaveBasis& basis_;
+};
+} // namespace kronos
+```
 
----
+**Step 2.** Integrate into `src/solver/scf.cpp`:
+- Construct alongside other potentials at the start of `solve()`.
+- Call `compute()` in the SCF iteration and add to `V_eff`.
+- Call `energy()` and include in the total energy decomposition.
+- Add a field to `SCFResult` in `scf.hpp` if separately reported.
 
-## Test Architecture
+**Step 3.** Re-run cmake (auto-globbed). Write tests, register with `kronos_add_test()`.
 
-### Test Files
+If the potential contributes to forces, add derivatives in `src/potential/forces.cpp` following the `compute_local_forces()` / `compute_nonlocal_forces()` pattern.
 
-| File | What it tests |
-|------|---------------|
-| `test_input.cpp` | YAML parsing, validation, error handling |
-| `test_basis.cpp` | PlaneWaveBasis, FFTGrid properties |
-| `test_fft.cpp` | FFT round-trip, scatter/gather |
-| `test_upf.cpp` | UPF parsing, validation |
-| `test_crystal.cpp` | Crystal construction, coordinate transforms |
-| `test_hamiltonian.cpp` | H|ψ⟩ properties: linearity, Hermiticity, kinetic |
-| `test_solvers.cpp` | Davidson, mixing, Fermi solver |
-| `test_scf.cpp` | SCF convergence, energy components |
-| `test_physics.cpp` | Ewald, XC functionals, Hartree, k-points |
-| `test_forces.cpp` | Force computation, Newton's 3rd law, BFGS |
-| `test_gradient.cpp` | GGA gradient computation |
-| `test_postprocessing.cpp` | Band structure, DOS |
-| `test_output.cpp` | JSON/HDF5 output |
-| `test_utils.cpp` | Timer, logger |
-| `test_validation.cpp` | Physics invariant validation |
-| `test_convergence.cpp` | Cutoff/k-point convergence studies |
-| `test_regression.cpp` | Frozen baseline regression |
 
-### Test Helpers
+## 4. Test Conventions and How to Add Tests
 
-`test/test_helpers.hpp` provides factory functions in `namespace kronos::test`:
+### Shared Helpers (test/test_helpers.hpp)
 
-- `make_si_diamond_crystal()` — Standard Si diamond cell
-- `make_nacl_crystal()` — NaCl rocksalt 8-atom cell
-- `make_cscl_crystal()` — CsCl 2-atom cell
-- `make_si_pseudopotential()` — Gaussian local-only Si PP
-- `make_si_pseudopotential_nonlocal()` — Si PP with KB projector
-- `make_si_pp_map()` / `make_si_pp_map_nonlocal()` — PP map wrappers
-- `make_si_diamond_displaced()` — Displaced crystal for force tests
-- `make_h_pseudopotential()` — Hydrogen PP
+`kronos::test` provides factories and tolerance constants:
 
-### Conventions
+| Helper | Description |
+|--------|-------------|
+| `make_si_diamond_crystal()` | Si diamond FCC, a=5.43 A, 2 atoms |
+| `make_nacl_crystal()` | NaCl rocksalt, 8 atoms |
+| `make_cscl_crystal()` | CsCl primitive, 2 atoms |
+| `make_si_pp_map()` | Local-only Gaussian Si pseudopotential |
+| `make_si_pp_map_nonlocal()` | Si PP with p-type KB projector, D=-2.0 Ry |
+| `make_si_diamond_displaced(delta, atom, dir)` | Displaced crystal for force finite-difference tests |
 
-- Tests that require SCF convergence use `GTEST_SKIP()` if convergence fails
-- Tolerance constants are defined in `test_helpers.hpp` (ENERGY_TOL, FORCE_TOL, etc.)
-- Each test file includes only the headers it needs
-- SCF tests use low cutoffs (8-15 Ry) and Gamma-only for speed
+Tolerances: `ENERGY_TOL` (1e-6), `FORCE_TOL` (1e-4), `FFT_TOL` (1e-10), `TIGHT_TOL` (1e-12), `LOOSE_TOL` (1e-3).
+
+### Test Categories
+
+- **Regression** (`test_regression.cpp`): Frozen baseline energies as `constexpr double`. `SetUpTestSuite()` runs SCF once and shares the `SCFResult`.
+- **Physics** (`test_physics.cpp`): Physical invariants -- Hermiticity, force sum rules, sign of energy components.
+- **Convergence** (`test_convergence.cpp`): Energy vs cutoff monotonicity, k-grid convergence, SCF iteration limits.
+- **Validation** (`test_validation.cpp`): Comparison against Quantum ESPRESSO references in `test/reference/`.
 
 ### Adding a New Test
 
-1. Create `test/test_yourmodule.cpp`
-2. Add `kronos_add_test(test_yourmodule)` to `test/CMakeLists.txt`
-3. Build and run: `cmake --build build && ./build/test/test_yourmodule`
+1. Create `test/test_yourmodule.cpp`.
+2. Add `kronos_add_test(test_yourmodule)` to `test/CMakeLists.txt`.
+3. Build and run: `cmake --build build -j$(nproc) && ./build/test_yourmodule`
+4. Use `GTEST_SKIP()` if SCF convergence fails non-deterministically.
+5. Keep cutoffs low (8-15 Ry) and use Gamma-only for speed.
+6. Full suite: `cd build && ctest --output-on-failure -E test_utils`
 
----
 
-## Build System
+## 5. Build System Details
 
-### CMake Structure
+### CMake Options
 
+| Option | Default | Description |
+|--------|---------|-------------|
+| `KRONOS_GPU_BACKEND` | `none` | GPU backend: `none`, `cuda`, `hip` |
+| `KRONOS_BUILD_TESTS` | `ON` | Build GoogleTest suite |
+| `KRONOS_BUILD_PYTHON` | `OFF` | Build pybind11 Python bindings |
+
+### Dependencies
+
+**Required:** FFTW3, BLAS, LAPACK, yaml-cpp.
+
+**Optional** (with compile definitions): HDF5 (`KRONOS_HAS_HDF5`), MPI (`KRONOS_HAS_MPI`), libxc (`KRONOS_HAS_LIBXC`), spglib (`KRONOS_HAS_SPGLIB`).
+
+**GPU:** CUDA toolkit defines `KRONOS_GPU_CUDA`; ROCm defines `KRONOS_GPU_HIP`.
+
+### Build Commands
+
+```bash
+cmake -B build -S .                              # configure (CPU-only)
+cmake --build build -j$(nproc)                   # compile
+cd build && ctest --output-on-failure            # all tests
+./build/src/kronos examples/si_bulk.yaml         # run (note: build/src/kronos)
+./build/test_basis --gtest_filter='*BasisSize'   # single test
 ```
-CMakeLists.txt          # Top-level: project, options, find_package, add_subdirectory
-├── src/CMakeLists.txt  # Builds kronos_lib (static library)
-└── test/CMakeLists.txt # Fetches GoogleTest, builds test executables
-```
 
-The `kronos_lib` target contains all source files. Test executables link against `kronos_lib` and `GTest::gtest_main`.
 
-### Adding a New Source File
+## 6. Coding Style and Conventions
 
-Just add `.cpp` to `src/your_module/`. CMake globs or lists are in `src/CMakeLists.txt`.
+### C++20 Features Used
 
-### Adding a Dependency
+- `std::numbers::pi`, `std::numbers::sqrt2` from `<numbers>`
+- Structured bindings: `auto [crystal, input] = parse_input(file);`
+- `constexpr` for all physical/math constants
+- `[[nodiscard]]` on query methods and pure functions
+- `std::map::contains()` (C++20)
+- No compiler extensions (`CMAKE_CXX_EXTENSIONS OFF`)
 
-In the top-level `CMakeLists.txt`:
-```cmake
-find_package(YourLib REQUIRED)
-target_link_libraries(kronos_lib PUBLIC YourLib::YourLib)
-```
+### Precision
 
-### GPU Backends
-
-Set `-DKRONOS_GPU_BACKEND=cuda` or `hip`. This:
-1. Enables CUDA/HIP language in CMake
-2. Links cuFFT/rocFFT, cuBLAS/rocBLAS
-3. Compiles `src/gpu/` with actual GPU implementations instead of CPU stubs
-
-The `gpu::` namespace is the abstraction boundary. Physics code never calls CUDA/HIP directly.
-
----
-
-## Coding Conventions
-
-### Language
-
-- **C++20** standard (concepts, ranges, `std::numbers`)
-- All floating-point: `double` (never `float` for physics)
-- Complex: `std::complex<double>`
+`double` and `std::complex<double>` only for physics. The aliases in `core/types.hpp` enforce this: `real_t = double`, `complex_t = std::complex<double>`, `CVec = std::vector<complex_t>`, `RVec = std::vector<double>`.
 
 ### Naming
 
-- Classes: `PascalCase` (`PlaneWaveBasis`, `SCFSolver`)
-- Functions/methods: `snake_case` (`compute_forces`, `num_pw`)
-- Constants: `snake_case` in `constants::` namespace
-- Member variables: `snake_case_` with trailing underscore
-- Enums: `PascalCase` values (`CalculationType::SCF`)
+- Classes: `PascalCase` -- `PlaneWaveBasis`, `SCFSolver`, `XCEvaluator`
+- Functions: `snake_case` -- `compute_forces()`, `num_pw()`, `is_gga()`
+- Constants: `snake_case` in `kronos::constants` -- `constants::pi`, `constants::rydberg_to_ev`
+- Members: trailing underscore -- `crystal_`, `is_gga_`, `name_`
+- Enums: `PascalCase` values -- `CalculationType::SCF`, `SmearingType::Gaussian`
+- Macros: `KRONOS_UPPER_CASE` -- `KRONOS_TIMER`, `KRONOS_HAS_LIBXC`
 
-### Error Handling
+### Unit System (Rydberg Atomic Units)
 
-- Input validation: `throw std::invalid_argument` with descriptive message
-- File I/O errors: `throw std::runtime_error` with file path
-- UPF errors: `throw UPFParseError` with line number
-- SCF non-convergence: return `SCFResult` with `converged=false` (not an exception)
-- Numerical issues (NaN, overflow): abort with diagnostic message
+- Kinetic: `T = |k+G|^2` (not `/2` as in Hartree)
+- Hartree: `V_H(G) = 8*pi*n(G)/|G|^2` (not `4*pi`)
+- Coulomb tail: `V_loc(r) -> -2Z/r` (factor of 2 vs Hartree)
+- Lattice: angstrom on input, bohr internally
 
-### Headers
+### Profiling
 
-- Every header has `#pragma once`
-- Include what you use; no transitive dependency assumptions
-- System headers after project headers
-- Forward-declare where possible to reduce compile times
+Wrap expensive functions with `KRONOS_TIMER("name")`. The macro creates a `ScopedTimer` that records wall time in the global `TimerRegistry` singleton. Results appear in `SCFResult::timing` and JSON output.
 
----
 
-## Profiling
+## 7. Debugging Tips
 
-### KRONOS_TIMER
+### Structured JSON Logs
 
-The built-in timer in `src/utils/timer.hpp`:
+KRONOS emits structured JSON lines to stderr via `Logger::instance()`. Each line has `timestamp`, `level`, `event`, `message`, and custom fields. Capture with: `./build/src/kronos input.yaml 2>kronos.log`
 
 ```cpp
-#include "utils/timer.hpp"
-
-void my_function() {
-    KRONOS_TIMER("my_function");  // Scoped timer
-    // ... work ...
-}  // Timer stops here, records wall time
+Logger::instance().info("scf_step", "SCF iteration complete",
+    {{"step", std::to_string(step)}, {"energy_ry", std::to_string(energy)}});
 ```
 
-Results appear in `SCFResult::timing` map and in JSON log output.
+### SCF Diagnostics
 
-### GPU Profiling
+Each SCF step prints: step number, total energy, |dE|, density residual |dn|, wall time.
 
-For CUDA builds, NVTX ranges are automatically inserted around GPU kernels. Profile with:
+| Symptom | Likely Cause | Fix |
+|---------|-------------|-----|
+| Energy oscillates | Mixing too aggressive | Reduce PulayMixer alpha (default 0.3) |
+| Energy increases | Wrong sign in potential | Check V_loc(G=0), Hartree prefactor |
+| Energy jump > 1 Ry | Numerical overflow or bug | Auto-aborts; check logs |
+| Density residual stalls | Poor initial density | Check atomic density superposition |
+| Davidson diverges | Near-degenerate states | Auto-switches to LOBPCG |
 
-```bash
-nsys profile ./kronos input.yaml
-nsys stats report.nsys-rep
+### Energy Decomposition
+
+`SCFResult` provides: `kinetic_energy`, `hartree_energy`, `xc_energy`, `local_pp_energy`, `nonlocal_pp_energy`, `ewald_energy`, `smearing_energy`. Compare individual components against QE to isolate discrepancies. Ewald energy is the easiest to validate (no SCF dependence) -- if it matches QE to 5+ figures, the crystal setup is correct.
+
+### Force Debugging
+
+Validate forces via finite differences using `make_si_diamond_displaced(delta, atom_idx, dir)`:
+
+```cpp
+double F_numerical = -(E_plus - E_minus) / (2.0 * delta_bohr);
+EXPECT_NEAR(F_numerical, F_analytic, FORCE_TOL);
 ```
+
+Forces decompose into Ewald, local PP, and nonlocal PP components, all stored separately in `SCFResult`.
+
+### Common Pitfalls
+
+1. **Rydberg vs Hartree.** Factor-of-2 differences everywhere: kinetic `|k+G|^2` not `/2`, Hartree `8*pi` not `4*pi`, Coulomb `-2Z/r` not `-Z/r`.
+2. **UPF conventions.** UPF stores `r*beta(r)` for projectors and `4*pi*r^2*rho(r)` for atomic density. Divide by appropriate powers of `r` when loading.
+3. **G=0 terms.** Hartree sets `V_H(G=0) = 0`. Local PP has a finite `V_loc(G=0)`. Wrong sign shifts total energy by a constant.
+4. **K-point formula.** KRONOS uses `k = (2n-N-1)/(2N) + s/(2N)`. For even N with shift=0, the grid is off-Gamma.
+5. **FFT grid.** `ecutrho >= 4 * ecutwfc` for norm-conserving PPs. Grid dimensions come from `ecutrho`.
+
+
+## 8. GPU Development
+
+The `kronos::gpu` namespace is the sole vendor API boundary:
+
+- `gpu/fft.hpp` -- cuFFT/rocFFT wrapper
+- `gpu/blas.hpp` -- cuBLAS/rocBLAS wrapper
+- `gpu/memory.hpp` -- device memory management
+- `gpu_stubs.cpp` -- throws `GPUNotAvailableError` in CPU-only builds
+
+**Adding a kernel:** (1) declare in `src/gpu/*.hpp`, (2) add stub in `gpu_stubs.cpp`, (3) implement in `.cu` (CUDA) or `.cpp` with `#ifdef KRONOS_GPU_HIP` (HIP), (4) call from physics code via `gpu::your_function()`. For deterministic results: `CUBLAS_WORKSPACE_CONFIG=:4096:8`.
+
+
+## 9. Error Handling
+
+| Situation | Action |
+|-----------|--------|
+| Invalid YAML input | `throw std::invalid_argument` with field name and allowed values |
+| Unknown YAML key | Hard abort (strict schema) |
+| UPF parse failure | `throw UPFParseError` with file path and line number |
+| Negative density | Clamp to 0; abort if magnitude > 1e-6 |
+| Energy oscillation > 1 Ry | Abort with diagnostic |
+| SCF non-convergence | Return `SCFResult{converged=false}` (not an exception) |
+| Davidson divergence | Auto-switch to LOBPCG |
+| GPU OOM | Auto-fallback to CPU |
+
+Exit codes from `main.cpp`: 0 (success), 1 (SCF not converged), 2 (input error), 3 (PP error), 4 (other).

@@ -72,13 +72,13 @@ TEST(PlaneWaveBasis, KineticEnergiesGamma) {
     auto crystal = make_si_diamond();
     kronos::PlaneWaveBasis basis(crystal, 30.0);
 
-    // At Gamma point (k=0), kinetic energies = |G|^2 / 2
+    // At Gamma point (k=0), kinetic energies = |G|^2 (Rydberg units)
     kronos::Vec3 k_gamma = {0.0, 0.0, 0.0};
     auto ekin = basis.kinetic_energies(k_gamma);
 
     ASSERT_EQ(ekin.size(), basis.num_pw());
     for (size_t i = 0; i < basis.num_pw(); ++i) {
-        EXPECT_NEAR(ekin[i], basis.gvec(i).norm2 / 2.0, 1e-12)
+        EXPECT_NEAR(ekin[i], basis.gvec(i).norm2, 1e-12)
             << "Mismatch at G-vector index " << i;
     }
 }
