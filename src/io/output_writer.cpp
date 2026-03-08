@@ -79,6 +79,39 @@ std::string OutputWriter::to_json_string(const SCFResult& result,
     }
     ss << "  ],\n";
 
+    // Stress tensor (Ry/bohr^3) — 3x3 symmetric tensor
+    ss << "  \"stress\": [\n";
+    for (int a = 0; a < 3; ++a) {
+        ss << "    [" << result.stress[a][0] << ", "
+           << result.stress[a][1] << ", "
+           << result.stress[a][2] << "]";
+        if (a < 2) ss << ",";
+        ss << "\n";
+    }
+    ss << "  ],\n";
+    ss << "  \"pressure_gpa\": " << result.pressure_gpa << ",\n";
+
+    // Stress tensor components (Ry/bohr^3)
+    ss << "  \"stress_components\": {\n";
+    auto write_mat3 = [&](const std::string& name, const Mat3& m, bool last) {
+        ss << "    \"" << name << "\": [\n";
+        for (int a = 0; a < 3; ++a) {
+            ss << "      [" << m[a][0] << ", " << m[a][1] << ", " << m[a][2] << "]";
+            if (a < 2) ss << ",";
+            ss << "\n";
+        }
+        ss << "    ]";
+        if (!last) ss << ",";
+        ss << "\n";
+    };
+    write_mat3("kinetic", result.stress_kinetic, false);
+    write_mat3("hartree", result.stress_hartree, false);
+    write_mat3("xc", result.stress_xc, false);
+    write_mat3("local_pp", result.stress_local, false);
+    write_mat3("nonlocal_pp", result.stress_nonlocal, false);
+    write_mat3("ewald", result.stress_ewald, true);
+    ss << "  },\n";
+
     // Eigenvalues per k-point
     ss << "  \"eigenvalues\": [\n";
     for (size_t ik = 0; ik < result.eigenvalues.size(); ++ik) {

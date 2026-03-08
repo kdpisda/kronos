@@ -1,0 +1,16 @@
+system:
+  lattice: [[5.43, 0, 0], [0, 5.43, 0], [0, 0, 5.43]]
+  atoms:
+    - {symbol: Si, position: [0.0, 0.0, 0.0]}
+    - {symbol: Si, position: [0.25, 0.25, 0.25]}
+calculation:
+  type: scf
+  ecutwfc: 30.0
+  kpoints: [4, 4, 4, 1, 1, 1]
+  xc: PBE
+pseudopotentials:
+  Si: pseudopotentials/Si_ONCV_PBE-1.2.upf
+convergence:
+  energy: 1e-8
+  density: 1e-9
+  max_scf_steps: 100

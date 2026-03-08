@@ -39,6 +39,18 @@ struct SCFResult {
     std::vector<Vec3> local_forces;
     std::vector<Vec3> nonlocal_forces;
 
+    // Stress tensor (Ry/bohr^3) — 3x3 symmetric tensor
+    Mat3 stress{};
+    double pressure_gpa{0.0};
+
+    // Stress tensor components (Ry/bohr^3)
+    Mat3 stress_kinetic{};
+    Mat3 stress_hartree{};
+    Mat3 stress_xc{};
+    Mat3 stress_local{};
+    Mat3 stress_nonlocal{};
+    Mat3 stress_ewald{};
+
     // Per-k-point eigenvalues (Ry)
     std::vector<std::vector<double>> eigenvalues;
 

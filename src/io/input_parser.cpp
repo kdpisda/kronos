@@ -166,11 +166,13 @@ CalculationParams parse_calculation(const YAML::Node& calc) {
             params.type = CalculationType::Relax;
         } else if (type_str == "bands") {
             params.type = CalculationType::Bands;
+        } else if (type_str == "vc-relax" || type_str == "vcrelax" || type_str == "vc_relax") {
+            params.type = CalculationType::VCRelax;
         } else if (type_str == "dos") {
             params.type = CalculationType::DOS;
         } else {
             throw InputValidationError(
-                "calculation.type: must be one of scf, relax, bands, dos; "
+                "calculation.type: must be one of scf, relax, vc-relax, bands, dos; "
                 "got '" + type_str + "'");
         }
     }
@@ -299,6 +301,35 @@ CalculationParams parse_calculation(const YAML::Node& calc) {
         }
     }
 
+    // -- checkpoint --------------------------------------------------------
+    if (calc["checkpoint_every"]) {
+        params.checkpoint_every = calc["checkpoint_every"].as<int>();
+        if (params.checkpoint_every < 0) {
+            throw InputValidationError(
+                "calculation.checkpoint_every: must be >= 0, got " +
+                std::to_string(params.checkpoint_every));
+        }
+    }
+    if (calc["checkpoint_file"]) {
+        params.checkpoint_file = calc["checkpoint_file"].as<std::string>();
+    }
+    if (calc["restart"]) {
+        params.restart_from_checkpoint = calc["restart"].as<bool>();
+    }
+
+    // -- vc-relax parameters -----------------------------------------------
+    if (calc["press_target"]) {
+        params.press_target = calc["press_target"].as<double>();
+    }
+    if (calc["cell_factor"]) {
+        params.cell_factor = calc["cell_factor"].as<double>();
+        if (params.cell_factor <= 0.0) {
+            throw InputValidationError(
+                "calculation.cell_factor: must be positive, got " +
+                std::to_string(params.cell_factor));
+        }
+    }
+
     return params;
 }
 
@@ -324,6 +355,9 @@ ConvergenceParams parse_convergence(const YAML::Node& conv) {
     }
     if (conv["force"]) {
         params.force_threshold = conv["force"].as<double>();
+    }
+    if (conv["stress"]) {
+        params.stress_threshold = conv["stress"].as<double>();
     }
 
     return params;

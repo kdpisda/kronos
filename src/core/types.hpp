@@ -15,7 +15,7 @@ using CVec = std::vector<complex_t>;  // complex wavefunction vector
 using RVec = std::vector<double>;     // real-space grid vector
 
 // Calculation type
-enum class CalculationType { SCF, Relax, Bands, DOS };
+enum class CalculationType { SCF, Relax, VCRelax, Bands, DOS };
 
 // Smearing method for metals
 enum class SmearingType { None, Gaussian, MarzariVanderbilt, FermiDirac };
@@ -49,6 +49,16 @@ struct CalculationParams {
     int nspin{1};            // 1 = unpolarized, 2 = spin-polarized (LSDA)
     std::map<std::string, double> starting_magnetization; // element -> initial mag [-1,1]
     EigensolverType eigensolver{EigensolverType::Davidson};
+
+    // VC-relax parameters
+    double press_target{0.0};  // Target pressure in GPa (0 = zero pressure)
+    double cell_factor{2.0};   // Factor for cell optimization step size
+
+    // Checkpoint/restart parameters
+    int checkpoint_every{0};                         // 0 = disabled
+    std::string checkpoint_file{"kronos_checkpoint.bin"};  // checkpoint filename
+    bool restart_from_checkpoint{false};             // restart from existing checkpoint
+    std::string input_hash;                          // hash of YAML input for verification
 };
 
 // Convergence criteria
@@ -57,6 +67,7 @@ struct ConvergenceParams {
     double density_threshold{1e-9};
     int max_scf_steps{100};
     double force_threshold{1e-3};     // Ry/bohr for geometry opt
+    double stress_threshold{0.5};     // kbar for vc-relax convergence
 };
 
 // Hardware configuration

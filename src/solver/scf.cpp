@@ -8,6 +8,8 @@
 #include "potential/nonlocal_pp.hpp"
 #include "potential/ewald.hpp"
 #include "potential/forces.hpp"
+#include "potential/stress.hpp"
+#include "io/checkpoint.hpp"
 #include "solver/davidson.hpp"
 #include "solver/mixing.hpp"
 #include "solver/fermi.hpp"
@@ -15,6 +17,7 @@
 #include "utils/timer.hpp"
 #include "utils/logger.hpp"
 #include "utils/radial_integral.hpp"
+#include "utils/mpi_wrapper.hpp"
 #include <algorithm>
 #include <cassert>
 #include <chrono>
@@ -164,6 +167,163 @@ static std::vector<Vec3> symmetrize_forces(
     }
 
     return forces_sym;
+}
+
+// =========================================================================
+// Density symmetrization in G-space using spglib symmetry operations
+// =========================================================================
+//
+// When using IBZ (irreducible Brillouin zone) k-points, the electron
+// density computed from wavefunctions lacks the full crystal symmetry.
+// QE symmetrizes n(G) at every SCF step; this function does the same.
+//
+// Algorithm (QE convention):
+//   n_sym(G) = (1/N_ops) * sum_{S} exp(-i 2pi t_S . G) * n(S^{-1} G)
+//
+// where {S, t_S} are the space group operations from spglib.
+// S is a 3x3 integer matrix (rotation in fractional coordinates),
+// t_S is the fractional translation, and S^{-1} G means the inverse
+// rotation applied to the Miller index vector G.
+//
+// For integer matrices with det(S) = +/-1, the inverse is computed
+// via the adjugate matrix: S^{-1} = det(S) * adj(S).
+// =========================================================================
+
+static void symmetrize_density_g(
+    const Crystal& crystal,
+    std::vector<complex_t>& density_g,
+    const std::array<int, 3>& grid_dims)
+{
+    const int n0 = grid_dims[0];
+    const int n1 = grid_dims[1];
+    const int n2 = grid_dims[2];
+    const int num_grid = n0 * n1 * n2;
+
+    if (num_grid == 0) return;
+
+    // Prepare crystal structure for spglib
+    const size_t natoms = crystal.num_atoms();
+    const auto& lat = crystal.lattice();
+    double lattice[3][3];
+    for (int i = 0; i < 3; ++i)
+        for (int j = 0; j < 3; ++j)
+            lattice[i][j] = lat[i][j];
+
+    std::vector<std::array<double, 3>> positions(natoms);
+    std::vector<int> types(natoms);
+    std::map<std::string, int> symbol_to_type;
+    int next_type = 0;
+    for (size_t ia = 0; ia < natoms; ++ia) {
+        const auto& atom = crystal.atom(ia);
+        auto it = symbol_to_type.find(atom.symbol);
+        if (it == symbol_to_type.end()) {
+            symbol_to_type[atom.symbol] = next_type;
+            types[ia] = next_type++;
+        } else {
+            types[ia] = it->second;
+        }
+        positions[ia] = {atom.position[0], atom.position[1], atom.position[2]};
+    }
+
+    // Get symmetry operations
+    const int max_ops = 192;
+    int rotations[192][3][3];
+    double translations[192][3];
+    int num_ops = spg_get_symmetry(
+        rotations, translations,
+        max_ops,
+        lattice,
+        reinterpret_cast<double(*)[3]>(positions.data()),
+        types.data(),
+        static_cast<int>(natoms),
+        1e-5);
+
+    if (num_ops <= 1) {
+        // Only identity operation (or spglib failed) — nothing to symmetrize
+        return;
+    }
+
+    // Save G=0 component: it must remain unchanged (total electron count)
+    complex_t n_g0 = density_g[0];
+
+
+    // Symmetrize density in G-space.
+    //
+    // The space group operation {S, t} in fractional coordinates transforms
+    // direct-space points as r' = S r + t.  The symmetrization projector
+    // for Fourier coefficients is:
+    //
+    //   n_sym(G) = (1/N_ops) sum_{S,t} exp(-i 2pi G.t) * n((S^{-1})^T G)
+    //
+    // The reciprocal-space transformation is G' = (S^{-1})^T G, NOT S^T G.
+    // These are only equivalent when S is orthogonal (S^{-1} = S^T), which
+    // is NOT the case for fractional-coordinate rotations on non-orthogonal
+    // lattices like FCC.
+    //
+    // For each operation, we precompute the inverse rotation matrix.
+    // Since |det(S)| = 1, the inverse is: S^{-1} = det(S) * adj(S).
+    //
+    std::vector<complex_t> density_sym(num_grid, complex_t{0.0, 0.0});
+
+    for (int iop = 0; iop < num_ops; ++iop) {
+        const auto& S = rotations[iop];
+        const auto& t = translations[iop];
+
+        // Compute S^{-1} via adjugate: S^{-1} = det(S) * adj(S)
+        int det = S[0][0] * (S[1][1]*S[2][2] - S[1][2]*S[2][1])
+                - S[0][1] * (S[1][0]*S[2][2] - S[1][2]*S[2][0])
+                + S[0][2] * (S[1][0]*S[2][1] - S[1][1]*S[2][0]);
+        // adjugate (cofactor matrix transposed)
+        int Sinv[3][3];
+        Sinv[0][0] = det * (S[1][1]*S[2][2] - S[1][2]*S[2][1]);
+        Sinv[0][1] = det * (S[0][2]*S[2][1] - S[0][1]*S[2][2]);
+        Sinv[0][2] = det * (S[0][1]*S[1][2] - S[0][2]*S[1][1]);
+        Sinv[1][0] = det * (S[1][2]*S[2][0] - S[1][0]*S[2][2]);
+        Sinv[1][1] = det * (S[0][0]*S[2][2] - S[0][2]*S[2][0]);
+        Sinv[1][2] = det * (S[0][2]*S[1][0] - S[0][0]*S[1][2]);
+        Sinv[2][0] = det * (S[1][0]*S[2][1] - S[1][1]*S[2][0]);
+        Sinv[2][1] = det * (S[0][1]*S[2][0] - S[0][0]*S[2][1]);
+        Sinv[2][2] = det * (S[0][0]*S[1][1] - S[0][1]*S[1][0]);
+
+        for (int idx = 0; idx < num_grid; ++idx) {
+            // Decode linear index to Miller indices (h, k, l)
+            int hi = idx / (n1 * n2);
+            int ki = (idx % (n1 * n2)) / n2;
+            int li = idx % n2;
+            int h = (hi <= n0 / 2) ? hi : hi - n0;
+            int k = (ki <= n1 / 2) ? ki : ki - n1;
+            int l = (li <= n2 / 2) ? li : li - n2;
+
+            // Rotated indices: G' = (S^{-1})^T * G
+            // (S^{-1})^T[i][j] = Sinv[j][i]
+            int hp = Sinv[0][0] * h + Sinv[1][0] * k + Sinv[2][0] * l;
+            int kp = Sinv[0][1] * h + Sinv[1][1] * k + Sinv[2][1] * l;
+            int lp = Sinv[0][2] * h + Sinv[1][2] * k + Sinv[2][2] * l;
+
+            // Wrap rotated indices to FFT grid range [0, n)
+            int hi_p = ((hp % n0) + n0) % n0;
+            int ki_p = ((kp % n1) + n1) % n1;
+            int li_p = ((lp % n2) + n2) % n2;
+
+            int idx_rot = hi_p * (n1 * n2) + ki_p * n2 + li_p;
+
+            // Phase factor: exp(-i 2pi t . G)
+            double phase_arg = -2.0 * constants::pi * (t[0] * h + t[1] * k + t[2] * l);
+            complex_t phase{std::cos(phase_arg), std::sin(phase_arg)};
+
+            density_sym[idx] += density_g[idx_rot] * phase;
+        }
+    }
+
+    // Divide by number of operations
+    double inv_nops = 1.0 / static_cast<double>(num_ops);
+    for (int idx = 0; idx < num_grid; ++idx) {
+        density_g[idx] = density_sym[idx] * inv_nops;
+    }
+
+    // Restore G=0 exactly (preserve total electron count)
+    density_g[0] = n_g0;
+
 }
 #endif
 
@@ -365,11 +525,27 @@ SCFResult SCFSolver::solve() {
 
     auto& logger = Logger::instance();
 
+    // MPI rank/size for k-point parallelization
+    const int mpi_rank = mpi::rank();
+    const int mpi_size = mpi::size();
+    const bool is_root = (mpi_rank == 0);
+
     // 1. Generate k-points first (needed to determine basis expansion)
     auto kpoint_data = KPointGenerator::generate_monkhorst_pack(
         calc_params_.kpoints, crystal_);
     std::vector<Vec3> kpoints = kpoint_data.kpoints;
     std::vector<double> kweights = kpoint_data.weights;
+    const int nk_total = static_cast<int>(kpoints.size());
+
+    // Distribute k-points across MPI ranks (round-robin).
+    // my_kpoint_indices[i] is a global k-point index handled by this rank.
+    std::vector<int> my_kpoint_indices;
+    for (int ik = 0; ik < nk_total; ++ik) {
+        if (ik % mpi_size == mpi_rank) {
+            my_kpoint_indices.push_back(ik);
+        }
+    }
+    const int nk_local = static_cast<int>(my_kpoint_indices.size());
 
     // Compute k_max = max |k_cart| over all k-points for basis expansion.
     // The shared basis must include all G where |k+G|^2 <= ecutwfc for any k.
@@ -487,18 +663,26 @@ SCFResult SCFSolver::solve() {
         {{"num_bands", std::to_string(num_bands)},
          {"num_pw", std::to_string(num_pw)},
          {"target_electrons", std::to_string(target_electrons)},
-         {"num_kpoints", std::to_string(kpoints.size())}});
+         {"num_kpoints", std::to_string(nk_total)},
+         {"mpi_size", std::to_string(mpi_size)},
+         {"nk_local", std::to_string(nk_local)}});
 
     // Log active PW count per k-point (G-vectors where |k+G|^2 <= ecutwfc)
-    for (size_t ik = 0; ik < kpoints.size(); ++ik) {
-        auto ke = basis.kinetic_energies(kpoints[ik]);
-        int active = 0;
-        for (size_t ig = 0; ig < ke.size(); ++ig) {
-            if (ke[ig] <= calc_params_.ecutwfc + 1.0e-6) active++;
+    if (is_root) {
+        for (int ik = 0; ik < nk_total; ++ik) {
+            auto ke = basis.kinetic_energies(kpoints[ik]);
+            int active = 0;
+            for (size_t ig = 0; ig < ke.size(); ++ig) {
+                if (ke[ig] <= calc_params_.ecutwfc + 1.0e-6) active++;
+            }
+            std::printf("  k-point %d: (%7.4f %7.4f %7.4f) weight=%.4f  npw=%d/%d  rank=%d\n",
+                        ik, kpoints[ik][0], kpoints[ik][1], kpoints[ik][2],
+                        kweights[ik], active, num_pw, ik % mpi_size);
         }
-        std::printf("  k-point %zu: (%7.4f %7.4f %7.4f) weight=%.4f  npw=%d/%d\n",
-                    ik, kpoints[ik][0], kpoints[ik][1], kpoints[ik][2],
-                    kweights[ik], active, num_pw);
+        if (mpi_size > 1) {
+            std::printf("  MPI: %d processes, %d k-points/rank (approx)\n",
+                        mpi_size, nk_local);
+        }
     }
 
     // 5. Initialize density
@@ -529,19 +713,24 @@ SCFResult SCFSolver::solve() {
             density_up_r[i] = density_r[i] * 0.5 * (1.0 + avg_mag);
             density_dn_r[i] = density_r[i] * 0.5 * (1.0 - avg_mag);
         }
-        std::printf("  Spin-polarized: nspin=2, starting magnetization=%.3f\n", avg_mag);
+        if (is_root) {
+            std::printf("  Spin-polarized: nspin=2, starting magnetization=%.3f\n", avg_mag);
+        }
     }
 
     // 6. SCF loop
     double prev_energy = 0.0;
     SCFResult result;
 
-    // Retain converged data for post-SCF force calculation
+    // Retain converged data for post-SCF force/stress calculation
     std::vector<std::vector<CVec>> converged_wavefunctions;
     std::vector<std::vector<double>> converged_occupations;
     CVec converged_density_g;
     std::vector<complex_t> converged_density_g_full;
     std::vector<complex_t> converged_veff_r;
+    double converged_exc_energy = 0.0;
+    RVec converged_vxc_r;
+    RVec converged_density_r;
 
     // LSDA mixing: mix total density and magnetization separately.
     // This is more stable than mixing n_up/n_dn independently.
@@ -568,6 +757,11 @@ SCFResult SCFSolver::solve() {
         std::vector<complex_t> density_g_full(num_grid);
         fft_grid.forward(density_c, density_g_full);
 
+        // NOTE: Density symmetrization is applied to the OUTPUT density
+        // (after wavefunction-based density construction, before mixing),
+        // not here at the input. See the symmetrization block before the
+        // mixer call below.
+
         // Gather to PW coefficients
         CVec density_g(num_pw);
         fft_grid.gather_from_grid(basis, density_g_full, density_g);
@@ -588,8 +782,50 @@ SCFResult SCFSolver::solve() {
         XCEvaluator::SpinXCResult spin_xc_result;
         double e_xc = 0.0;
 
-        if (nspin == 2) {
-            // Spin-polarized XC: separate V_xc for up and down
+        if (nspin == 2 && xc.is_gga()) {
+            // Spin-polarized GGA: compute per-spin gradients and XC
+            // 1. FFT spin densities to G-space
+            std::vector<complex_t> dup_c(num_grid), ddn_c(num_grid);
+            for (int i = 0; i < num_grid; ++i) {
+                dup_c[i] = complex_t{density_up_r[i], 0.0};
+                ddn_c[i] = complex_t{density_dn_r[i], 0.0};
+            }
+            std::vector<complex_t> dup_g_full(num_grid), ddn_g_full(num_grid);
+            fft_grid.forward(dup_c, dup_g_full);
+            fft_grid.forward(ddn_c, ddn_g_full);
+
+            // 2. Gather to PW coefficients
+            CVec dup_g(num_pw), ddn_g(num_pw);
+            fft_grid.gather_from_grid(basis, dup_g_full, dup_g);
+            fft_grid.gather_from_grid(basis, ddn_g_full, ddn_g);
+
+            // 3. Compute spin sigma (|∇n_up|², ∇n_up·∇n_dn, |∇n_dn|²)
+            auto spin_sigma = compute_spin_sigma(dup_g, ddn_g, basis, fft_grid);
+
+            // 4. Evaluate spin-polarized GGA XC
+            auto sgga = xc.evaluate_spin_gga(
+                density_up_r, density_dn_r,
+                spin_sigma.sigma_uu, spin_sigma.sigma_ud, spin_sigma.sigma_dd,
+                volume);
+
+            // 5. Compute GGA potential corrections
+            RVec vgga_up(num_grid), vgga_dn(num_grid);
+            compute_spin_gga_potential(
+                dup_g, ddn_g,
+                sgga.vsigma_uu, sgga.vsigma_ud, sgga.vsigma_dd,
+                spin_sigma, basis, fft_grid,
+                vgga_up, vgga_dn);
+
+            // 6. Package into spin_xc_result with GGA corrections
+            spin_xc_result.vxc_up.resize(num_grid);
+            spin_xc_result.vxc_dn.resize(num_grid);
+            for (int i = 0; i < num_grid; ++i) {
+                spin_xc_result.vxc_up[i] = sgga.vxc_up[i] + vgga_up[i];
+                spin_xc_result.vxc_dn[i] = sgga.vxc_dn[i] + vgga_dn[i];
+            }
+            e_xc = sgga.energy;
+        } else if (nspin == 2) {
+            // Spin-polarized LDA: separate V_xc for up and down
             spin_xc_result = xc.evaluate_spin(density_up_r, density_dn_r, volume);
             e_xc = spin_xc_result.energy;
         } else if (xc.is_gga()) {
@@ -635,15 +871,23 @@ SCFResult SCFSolver::solve() {
             }
         }
 
-        // e. Solve eigenvalue problem at each k-point (per spin for nspin=2)
+        // e. Solve eigenvalue problem at LOCAL k-points (per spin for nspin=2)
+        //    Each MPI rank solves only its subset of k-points, then
+        //    eigenvalues are gathered for the global Fermi level search.
+        //
         //    For nspin=2: solve twice per k-point with V_eff_up and V_eff_dn
-        std::vector<std::vector<double>> all_eigenvalues;
-        std::vector<std::vector<CVec>> all_wavefunctions;
+        //
+        //    Local storage: indexed by local k-point index (0..nk_local-1)
+        //    Global storage (eigenvalues only): indexed by global k-point index
 
-        // Per-spin eigenvalues/wavefunctions for nspin=2
-        // Layout: all_eigenvalues_spin[ispin][ik][ib]
-        std::vector<std::vector<std::vector<double>>> all_eigenvalues_spin(nspin);
-        std::vector<std::vector<std::vector<CVec>>> all_wavefunctions_spin(nspin);
+        // Local wavefunctions/eigenvalues: [local_ik][band]
+        std::vector<std::vector<double>> local_eigenvalues;
+        std::vector<std::vector<CVec>> local_wavefunctions;
+
+        // Per-spin local eigenvalues/wavefunctions for nspin=2
+        // Layout: local_eigenvalues_spin[ispin][local_ik][ib]
+        std::vector<std::vector<std::vector<double>>> local_eigenvalues_spin(nspin);
+        std::vector<std::vector<std::vector<CVec>>> local_wavefunctions_spin(nspin);
 
         for (int ispin = 0; ispin < nspin; ++ispin) {
             if (nspin == 2) {
@@ -652,23 +896,84 @@ SCFResult SCFSolver::solve() {
                 ham.update_veff(veff_r);
             }
 
-            for (size_t ik = 0; ik < kpoints.size(); ++ik) {
+            for (int iloc = 0; iloc < nk_local; ++iloc) {
                 KRONOS_TIMER("eigensolver");
-                auto h_apply = ham.get_apply_function(kpoints[ik]);
-                auto precond = ham.kinetic_diagonal(kpoints[ik]);
+                int ik_global = my_kpoint_indices[iloc];
+                auto h_apply = ham.get_apply_function(kpoints[ik_global]);
+                auto precond = ham.kinetic_diagonal(kpoints[ik_global]);
 
                 EigenResult eigen = eigensolver.solve(h_apply, precond, num_bands, num_pw);
 
                 if (nspin == 1) {
-                    all_eigenvalues.push_back(eigen.eigenvalues);
-                    all_wavefunctions.push_back(std::move(eigen.eigenvectors));
+                    local_eigenvalues.push_back(eigen.eigenvalues);
+                    local_wavefunctions.push_back(std::move(eigen.eigenvectors));
                 }
-                all_eigenvalues_spin[ispin].push_back(eigen.eigenvalues);
-                all_wavefunctions_spin[ispin].push_back(std::move(eigen.eigenvectors));
+                local_eigenvalues_spin[ispin].push_back(eigen.eigenvalues);
+                local_wavefunctions_spin[ispin].push_back(std::move(eigen.eigenvectors));
             }
         }
 
-        // f. Find Fermi level and occupations
+        // Gather ALL eigenvalues from all ranks for the Fermi level search.
+        // Each rank packs its local eigenvalues into a flat buffer, then we
+        // allgather so every rank has the complete set.
+        //
+        // all_eigenvalues[global_ik][ib] -- full set for nspin=1
+        // all_eigenvalues_spin[ispin][global_ik][ib] -- full set for nspin=2
+        std::vector<std::vector<double>> all_eigenvalues(nk_total);
+        std::vector<std::vector<std::vector<double>>> all_eigenvalues_spin(nspin,
+            std::vector<std::vector<double>>(nk_total));
+
+        for (int ispin = 0; ispin < nspin; ++ispin) {
+            // Pack local eigenvalues into flat send buffer
+            std::vector<double> sendbuf(nk_local * num_bands, 0.0);
+            for (int iloc = 0; iloc < nk_local; ++iloc) {
+                for (int ib = 0; ib < num_bands; ++ib) {
+                    sendbuf[iloc * num_bands + ib] =
+                        (nspin == 1) ? local_eigenvalues[iloc][ib]
+                                     : local_eigenvalues_spin[ispin][iloc][ib];
+                }
+            }
+
+            // Prepare recvcounts and displacements for allgatherv
+            std::vector<int> recvcounts(mpi_size);
+            std::vector<int> displs(mpi_size);
+            for (int r = 0; r < mpi_size; ++r) {
+                int nk_r = 0;
+                for (int ik = 0; ik < nk_total; ++ik) {
+                    if (ik % mpi_size == r) nk_r++;
+                }
+                recvcounts[r] = nk_r * num_bands;
+            }
+            displs[0] = 0;
+            for (int r = 1; r < mpi_size; ++r) {
+                displs[r] = displs[r - 1] + recvcounts[r - 1];
+            }
+            int total_recv = displs[mpi_size - 1] + recvcounts[mpi_size - 1];
+            std::vector<double> recvbuf(total_recv, 0.0);
+
+            mpi::allgatherv(sendbuf.data(), nk_local * num_bands,
+                            recvbuf.data(), recvcounts.data(), displs.data());
+
+            // Unpack into all_eigenvalues / all_eigenvalues_spin
+            for (int r = 0; r < mpi_size; ++r) {
+                int offset = displs[r];
+                int local_idx = 0;
+                for (int ik = 0; ik < nk_total; ++ik) {
+                    if (ik % mpi_size != r) continue;
+                    std::vector<double> evals(num_bands);
+                    for (int ib = 0; ib < num_bands; ++ib) {
+                        evals[ib] = recvbuf[offset + local_idx * num_bands + ib];
+                    }
+                    all_eigenvalues_spin[ispin][ik] = evals;
+                    if (nspin == 1) {
+                        all_eigenvalues[ik] = evals;
+                    }
+                    local_idx++;
+                }
+            }
+        }
+
+        // f. Find Fermi level and occupations using GLOBAL eigenvalues.
         //    For nspin=2: combine eigenvalues from both spins into a single
         //    Fermi search with spin_factor=1 and doubled k-point weights.
         //    Layout: [spin_up k0, spin_up k1, ..., spin_dn k0, spin_dn k1, ...]
@@ -680,7 +985,7 @@ SCFResult SCFSolver::solve() {
             std::vector<std::vector<double>> combined_evals;
             std::vector<double> combined_weights;
             for (int ispin = 0; ispin < nspin; ++ispin) {
-                for (size_t ik = 0; ik < kpoints.size(); ++ik) {
+                for (int ik = 0; ik < nk_total; ++ik) {
                     combined_evals.push_back(all_eigenvalues_spin[ispin][ik]);
                     combined_weights.push_back(kweights[ik]);
                 }
@@ -690,12 +995,11 @@ SCFResult SCFSolver::solve() {
                 combined_evals, combined_weights, target_electrons,
                 calc_params_.smearing, calc_params_.degauss, 1);
 
-            // Split occupations back to per-spin
-            size_t nk = kpoints.size();
+            // Split occupations back to per-spin (global indexing)
             for (int ispin = 0; ispin < nspin; ++ispin) {
-                fermi_spin[ispin].occupations.resize(nk);
-                for (size_t ik = 0; ik < nk; ++ik) {
-                    size_t idx = ispin * nk + ik;
+                fermi_spin[ispin].occupations.resize(nk_total);
+                for (int ik = 0; ik < nk_total; ++ik) {
+                    size_t idx = ispin * nk_total + ik;
                     fermi_spin[ispin].occupations[ik] = fermi.occupations[idx];
                 }
                 fermi_spin[ispin].fermi_energy = fermi.fermi_energy;
@@ -707,23 +1011,42 @@ SCFResult SCFSolver::solve() {
                 calc_params_.smearing, calc_params_.degauss, spin_factor);
         }
 
-        // g. Compute new density from wavefunctions
+        // g. Compute new density from LOCAL k-point wavefunctions, then
+        //    allreduce to get the total density across all ranks.
         RVec density_out(num_grid, 0.0);
         RVec density_out_up(num_grid, 0.0), density_out_dn(num_grid, 0.0);
+
+        // Extract local occupations from global Fermi result
+        std::vector<std::vector<double>> local_occupations(nk_local);
+        std::vector<std::vector<std::vector<double>>> local_occupations_spin(nspin,
+            std::vector<std::vector<double>>(nk_local));
+        for (int iloc = 0; iloc < nk_local; ++iloc) {
+            int ik_global = my_kpoint_indices[iloc];
+            if (nspin == 1) {
+                local_occupations[iloc] = fermi.occupations[ik_global];
+            }
+            for (int ispin = 0; ispin < nspin; ++ispin) {
+                if (nspin == 2) {
+                    local_occupations_spin[ispin][iloc] =
+                        fermi_spin[ispin].occupations[ik_global];
+                }
+            }
+        }
 
         auto accumulate_density = [&](const std::vector<std::vector<CVec>>& wfcs,
                                        const std::vector<std::vector<double>>& occs,
                                        RVec& dens_out) {
-            for (size_t ik = 0; ik < kpoints.size(); ++ik) {
-                auto ke_k = basis.kinetic_energies(kpoints[ik]);
+            for (int iloc = 0; iloc < nk_local; ++iloc) {
+                int ik_global = my_kpoint_indices[iloc];
+                auto ke_k = basis.kinetic_energies(kpoints[ik_global]);
                 for (int n = 0; n < num_bands; ++n) {
-                    double occ = kweights[ik] * occs[ik][n];
+                    double occ = kweights[ik_global] * occs[iloc][n];
                     if (occ < 1e-12) continue;
 
                     CVec psi_masked(num_pw);
                     for (int ig = 0; ig < num_pw; ++ig) {
                         psi_masked[ig] = (ke_k[ig] <= calc_params_.ecutwfc + 1.0e-6)
-                                       ? wfcs[ik][n][ig]
+                                       ? wfcs[iloc][n][ig]
                                        : complex_t{0.0, 0.0};
                     }
                     std::vector<complex_t> psi_grid(num_grid, complex_t{0.0, 0.0});
@@ -738,13 +1061,20 @@ SCFResult SCFSolver::solve() {
         };
 
         if (nspin == 2) {
-            accumulate_density(all_wavefunctions_spin[0], fermi_spin[0].occupations, density_out_up);
-            accumulate_density(all_wavefunctions_spin[1], fermi_spin[1].occupations, density_out_dn);
+            accumulate_density(local_wavefunctions_spin[0], local_occupations_spin[0], density_out_up);
+            accumulate_density(local_wavefunctions_spin[1], local_occupations_spin[1], density_out_dn);
             for (int i = 0; i < num_grid; ++i) {
                 density_out[i] = density_out_up[i] + density_out_dn[i];
             }
         } else {
-            accumulate_density(all_wavefunctions, fermi.occupations, density_out);
+            accumulate_density(local_wavefunctions, local_occupations, density_out);
+        }
+
+        // MPI: allreduce partial density contributions from all ranks
+        mpi::allreduce_sum_inplace(density_out.data(), num_grid);
+        if (nspin == 2) {
+            mpi::allreduce_sum_inplace(density_out_up.data(), num_grid);
+            mpi::allreduce_sum_inplace(density_out_dn.data(), num_grid);
         }
 
         // Normalize: integral n(r) dr = N_electrons
@@ -811,7 +1141,8 @@ SCFResult SCFSolver::solve() {
 
         double total_e = e_band - e_hartree + e_xc - vxc_integral;
 
-        // Smearing entropy correction
+        // Smearing entropy correction (Gaussian: -T*S = -0.5*sigma/sqrt(pi) * sum exp(-x^2))
+        // QE uses w0gauss(x) = -0.5*exp(-x^2)/sqrt(pi) per state.
         double e_smearing = 0.0;
         if (calc_params_.smearing == SmearingType::Gaussian && calc_params_.degauss > 0) {
             const double deg = calc_params_.degauss;
@@ -821,14 +1152,14 @@ SCFResult SCFSolver::solve() {
                 for (size_t ik = 0; ik < kpoints.size(); ++ik) {
                     for (int n = 0; n < num_bands; ++n) {
                         double x = (evals[ik][n] - ef) / deg;
-                        e_smearing += 1.0 * kweights[ik] * std::exp(-x * x);
+                        e_smearing += kweights[ik] * std::exp(-x * x);
                     }
                 }
             }
             // For nspin=1 (unpolarized), the spin_factor=2 is implicit
             // For nspin=2, we summed both spin channels explicitly
             if (nspin == 1) e_smearing *= 2.0;
-            e_smearing *= -deg / std::sqrt(constants::pi);
+            e_smearing *= -0.5 * deg / std::sqrt(constants::pi);
         }
         total_e += e_smearing;
 
@@ -862,31 +1193,37 @@ SCFResult SCFSolver::solve() {
             dn /= target_electrons;  // relative density change
         }
 
-        // Compute kinetic and nonlocal energies from band decomposition
+        // Compute kinetic and nonlocal energies from band decomposition.
+        // Only iterate over LOCAL k-points (we have wavefunctions only for
+        // our subset), then allreduce to get the global nonlocal energy.
         double e_nonlocal = 0.0;
         if (nspin == 2) {
             for (int ispin = 0; ispin < nspin; ++ispin) {
-                for (size_t ik = 0; ik < kpoints.size(); ++ik) {
+                for (int iloc = 0; iloc < nk_local; ++iloc) {
+                    int ik_global = my_kpoint_indices[iloc];
                     for (int n = 0; n < num_bands; ++n) {
-                        double occ = kweights[ik] * fermi_spin[ispin].occupations[ik][n];
+                        double occ = kweights[ik_global] * local_occupations_spin[ispin][iloc][n];
                         if (occ < 1e-12) continue;
                         double enl = nonlocal_pp.energy(
-                            {all_wavefunctions_spin[ispin][ik][n]}, {1.0}, kpoints[ik]);
+                            {local_wavefunctions_spin[ispin][iloc][n]}, {1.0}, kpoints[ik_global]);
                         e_nonlocal += occ * enl;
                     }
                 }
             }
         } else {
-            for (size_t ik = 0; ik < kpoints.size(); ++ik) {
+            for (int iloc = 0; iloc < nk_local; ++iloc) {
+                int ik_global = my_kpoint_indices[iloc];
                 for (int n = 0; n < num_bands; ++n) {
-                    double occ = kweights[ik] * fermi.occupations[ik][n];
+                    double occ = kweights[ik_global] * local_occupations[iloc][n];
                     if (occ < 1e-12) continue;
                     double enl = nonlocal_pp.energy(
-                        {all_wavefunctions[ik][n]}, {1.0}, kpoints[ik]);
+                        {local_wavefunctions[iloc][n]}, {1.0}, kpoints[ik_global]);
                     e_nonlocal += occ * enl;
                 }
             }
         }
+        // MPI: allreduce partial nonlocal energy
+        mpi::allreduce_sum_inplace(&e_nonlocal, 1);
         double e_kinetic = e_band - 2.0 * e_hartree - e_local - vxc_integral - e_nonlocal;
 
         result.total_energy_ry = total_e;
@@ -920,37 +1257,53 @@ SCFResult SCFSolver::solve() {
             result.eigenvalues = all_eigenvalues;
         }
 
-        // Retain data for post-SCF force calculation
+        // Retain data for post-SCF force calculation.
+        // We store LOCAL wavefunctions/occupations indexed by local k-point.
+        // The force calculation will iterate only over local k-points and
+        // allreduce the result.
         if (nspin == 2) {
             // Combine both spin channels' wavefunctions/occupations
             converged_wavefunctions.clear();
             converged_occupations.clear();
-            for (size_t ik = 0; ik < kpoints.size(); ++ik) {
-                // Concatenate spin-up and spin-down at each k-point
+            for (int iloc = 0; iloc < nk_local; ++iloc) {
+                // Concatenate spin-up and spin-down at each local k-point
                 std::vector<CVec> combined_wfcs;
                 std::vector<double> combined_occs;
                 for (int ispin = 0; ispin < nspin; ++ispin) {
                     for (int n = 0; n < num_bands; ++n) {
-                        combined_wfcs.push_back(all_wavefunctions_spin[ispin][ik][n]);
-                        combined_occs.push_back(fermi_spin[ispin].occupations[ik][n]);
+                        combined_wfcs.push_back(local_wavefunctions_spin[ispin][iloc][n]);
+                        combined_occs.push_back(local_occupations_spin[ispin][iloc][n]);
                     }
                 }
                 converged_wavefunctions.push_back(std::move(combined_wfcs));
                 converged_occupations.push_back(std::move(combined_occs));
             }
         } else {
-            converged_wavefunctions = all_wavefunctions;
-            converged_occupations = fermi.occupations;
+            converged_wavefunctions = local_wavefunctions;
+            converged_occupations = local_occupations;
         }
         converged_density_g = density_g;
         converged_density_g_full = density_g_full;
         converged_veff_r = veff_r;
+        converged_exc_energy = e_xc;
+        if (nspin == 2) {
+            // For stress XC: store total vxc as weighted average
+            converged_vxc_r.resize(num_grid);
+            for (int i = 0; i < num_grid; ++i) {
+                converged_vxc_r[i] = 0.5 * (spin_xc_result.vxc_up[i] + spin_xc_result.vxc_dn[i]);
+            }
+        } else {
+            converged_vxc_r = xc_result.vxc;
+        }
+        converged_density_r = density_r;
 
         auto step_end = std::chrono::high_resolution_clock::now();
         double wall = std::chrono::duration<double>(step_end - step_start).count();
-        print_scf_step(step, total_e, de, dn, wall);
-        if (nspin == 2) {
-            std::printf("         mag = %.4f muB\n", result.total_magnetization);
+        if (is_root) {
+            print_scf_step(step, total_e, de, dn, wall);
+            if (nspin == 2) {
+                std::printf("         mag = %.4f muB\n", result.total_magnetization);
+            }
         }
 
         // Convergence check: energy convergence is the primary criterion.
@@ -978,6 +1331,65 @@ SCFResult SCFSolver::solve() {
                 {{"de", std::to_string(de)}});
             break;
         }
+
+        // Symmetrize the output density before mixing.
+        // When using IBZ k-points, the density from wavefunctions lacks full
+        // crystal symmetry. Symmetrizing it ensures the mixer converges to
+        // a density with the correct symmetry, matching the QE convention.
+        //
+        // For Gamma-only (1 k-point), skip symmetrization because the
+        // density from Gamma wavefunctions already has full crystal symmetry.
+        //
+        // We do NOT clamp negative values after symmetrization because the
+        // non-linear clamp breaks the self-consistency condition and can
+        // cause DIIS instability. Tiny negative values from the FFT
+        // round-trip are harmless and within numerical precision.
+#ifdef KRONOS_HAS_SPGLIB
+        if (kpoints.size() > 1) {
+            // FFT density_out to G-space, symmetrize, IFFT back
+            std::vector<complex_t> dout_c(num_grid);
+            for (int i = 0; i < num_grid; ++i) {
+                dout_c[i] = complex_t{density_out[i], 0.0};
+            }
+            std::vector<complex_t> dout_g(num_grid);
+            fft_grid.forward(dout_c, dout_g);
+            symmetrize_density_g(crystal_, dout_g, grid_dims);
+            fft_grid.inverse(dout_g, dout_c);
+            for (int i = 0; i < num_grid; ++i) {
+                density_out[i] = std::real(dout_c[i]);
+            }
+
+            // For nspin=2, also symmetrize per-spin densities
+            if (nspin == 2) {
+                // Symmetrize density_out_up
+                for (int i = 0; i < num_grid; ++i) {
+                    dout_c[i] = complex_t{density_out_up[i], 0.0};
+                }
+                fft_grid.forward(dout_c, dout_g);
+                symmetrize_density_g(crystal_, dout_g, grid_dims);
+                fft_grid.inverse(dout_g, dout_c);
+                for (int i = 0; i < num_grid; ++i) {
+                    density_out_up[i] = std::real(dout_c[i]);
+                }
+
+                // Symmetrize density_out_dn
+                for (int i = 0; i < num_grid; ++i) {
+                    dout_c[i] = complex_t{density_out_dn[i], 0.0};
+                }
+                fft_grid.forward(dout_c, dout_g);
+                symmetrize_density_g(crystal_, dout_g, grid_dims);
+                fft_grid.inverse(dout_g, dout_c);
+                for (int i = 0; i < num_grid; ++i) {
+                    density_out_dn[i] = std::real(dout_c[i]);
+                }
+
+                // Recompute total from symmetrized per-spin densities
+                for (int i = 0; i < num_grid; ++i) {
+                    density_out[i] = density_out_up[i] + density_out_dn[i];
+                }
+            }
+        }
+#endif
 
         // i. Mix densities (with optional Kerker preconditioning for metals)
         //    For nspin=2, mix total density and magnetization separately.
@@ -1075,21 +1487,52 @@ SCFResult SCFSolver::solve() {
     // Compute Hellmann-Feynman forces if the calculation type requires them
     // (SCF + Relax both need forces; Bands and DOS do not)
     const bool compute_forces = (calc_params_.type == CalculationType::SCF
-                              || calc_params_.type == CalculationType::Relax);
+                              || calc_params_.type == CalculationType::Relax
+                              || calc_params_.type == CalculationType::VCRelax);
+
+    // Build local k-points/weights arrays for post-SCF calculations.
+    // Needed by force calculator when using MPI k-point parallelization.
+    std::vector<Vec3> local_kpoints(nk_local);
+    std::vector<double> local_kweights(nk_local);
+    for (int iloc = 0; iloc < nk_local; ++iloc) {
+        int ik_global = my_kpoint_indices[iloc];
+        local_kpoints[iloc] = kpoints[ik_global];
+        local_kweights[iloc] = kweights[ik_global];
+    }
 
     if (compute_forces && !converged_density_g_full.empty()) {
         KRONOS_TIMER("forces");
 
         // Local pseudopotential forces (must use full density grid to match energy)
+        // These do not depend on k-points, so all ranks compute the same result.
         result.local_forces = ForceCalculator::compute_local_forces(
             crystal_, pseudopotentials_, converged_density_g_full,
             grid_gcart, grid_g2, ecutrho, volume, num_grid);
 
-        // Nonlocal pseudopotential forces
+        // Nonlocal pseudopotential forces: each rank computes partial forces
+        // from its LOCAL k-points only, then allreduce to sum across ranks.
         result.nonlocal_forces = ForceCalculator::compute_nonlocal_forces(
             crystal_, basis, pseudopotentials_,
             converged_wavefunctions, converged_occupations,
-            kpoints, kweights, spin_factor);
+            local_kpoints, local_kweights, spin_factor);
+
+        // MPI: allreduce nonlocal forces (partial sums from each rank)
+        {
+            const size_t natoms = crystal_.num_atoms();
+            std::vector<double> nl_forces_flat(natoms * 3);
+            for (size_t ia = 0; ia < natoms; ++ia) {
+                nl_forces_flat[ia * 3 + 0] = result.nonlocal_forces[ia][0];
+                nl_forces_flat[ia * 3 + 1] = result.nonlocal_forces[ia][1];
+                nl_forces_flat[ia * 3 + 2] = result.nonlocal_forces[ia][2];
+            }
+            mpi::allreduce_sum_inplace(nl_forces_flat.data(),
+                                       static_cast<int>(natoms * 3));
+            for (size_t ia = 0; ia < natoms; ++ia) {
+                result.nonlocal_forces[ia][0] = nl_forces_flat[ia * 3 + 0];
+                result.nonlocal_forces[ia][1] = nl_forces_flat[ia * 3 + 1];
+                result.nonlocal_forces[ia][2] = nl_forces_flat[ia * 3 + 2];
+            }
+        }
 
         // Total forces: Ewald + local + nonlocal
         result.forces = ForceCalculator::compute_total_forces(
@@ -1103,31 +1546,84 @@ SCFResult SCFSolver::solve() {
         result.forces = symmetrize_forces(crystal_, result.forces);
 #endif
 
-        // Print force summary
-        std::printf("\nHellmann-Feynman forces (Ry/bohr):\n");
-        std::printf("  Atom  Symbol      Fx            Fy            Fz\n");
-        for (size_t ia = 0; ia < crystal_.num_atoms(); ++ia) {
-            std::printf("  %3zu   %2s     %12.8f  %12.8f  %12.8f\n",
-                        ia + 1,
-                        crystal_.atom(ia).symbol.c_str(),
-                        result.forces[ia][0],
-                        result.forces[ia][1],
-                        result.forces[ia][2]);
-        }
+        // Print force summary (rank 0 only)
+        if (is_root) {
+            std::printf("\nHellmann-Feynman forces (Ry/bohr):\n");
+            std::printf("  Atom  Symbol      Fx            Fy            Fz\n");
+            for (size_t ia = 0; ia < crystal_.num_atoms(); ++ia) {
+                std::printf("  %3zu   %2s     %12.8f  %12.8f  %12.8f\n",
+                            ia + 1,
+                            crystal_.atom(ia).symbol.c_str(),
+                            result.forces[ia][0],
+                            result.forces[ia][1],
+                            result.forces[ia][2]);
+            }
 
-        // Print maximum force magnitude
-        double max_force = 0.0;
-        for (size_t ia = 0; ia < crystal_.num_atoms(); ++ia) {
-            double f2 = result.forces[ia][0] * result.forces[ia][0]
-                      + result.forces[ia][1] * result.forces[ia][1]
-                      + result.forces[ia][2] * result.forces[ia][2];
-            max_force = std::max(max_force, std::sqrt(f2));
-        }
-        std::printf("  Max |F| = %.8f Ry/bohr\n", max_force);
+            // Print maximum force magnitude
+            double max_force = 0.0;
+            for (size_t ia = 0; ia < crystal_.num_atoms(); ++ia) {
+                double f2 = result.forces[ia][0] * result.forces[ia][0]
+                          + result.forces[ia][1] * result.forces[ia][1]
+                          + result.forces[ia][2] * result.forces[ia][2];
+                max_force = std::max(max_force, std::sqrt(f2));
+            }
+            std::printf("  Max |F| = %.8f Ry/bohr\n", max_force);
 
-        logger.info("forces", "Hellmann-Feynman forces computed",
-            {{"max_force_ry_bohr", std::to_string(max_force)},
-             {"num_atoms", std::to_string(crystal_.num_atoms())}});
+            logger.info("forces", "Hellmann-Feynman forces computed",
+                {{"max_force_ry_bohr", std::to_string(max_force)},
+                 {"num_atoms", std::to_string(crystal_.num_atoms())}});
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // 8. Post-SCF: Stress tensor
+    // ----------------------------------------------------------------
+    if (compute_forces && !converged_density_g_full.empty()) {
+        KRONOS_TIMER("stress");
+
+        result.stress_kinetic = StressCalculator::compute_kinetic_stress(
+            crystal_, basis,
+            converged_wavefunctions, converged_occupations,
+            local_kpoints, local_kweights);
+
+        result.stress_hartree = StressCalculator::compute_hartree_stress(
+            converged_density_g_full, grid_gcart, grid_g2,
+            ecutrho, volume, num_grid);
+
+        result.stress_xc = StressCalculator::compute_xc_stress(
+            converged_exc_energy, converged_vxc_r, converged_density_r,
+            volume, num_grid);
+
+        result.stress_local = StressCalculator::compute_local_stress(
+            crystal_, pseudopotentials_,
+            converged_density_g_full, vloc_full_g,
+            grid_gcart, grid_g2, ecutrho, volume, num_grid);
+
+        result.stress_nonlocal = StressCalculator::compute_nonlocal_stress(
+            crystal_, basis, pseudopotentials_,
+            converged_wavefunctions, converged_occupations,
+            local_kpoints, local_kweights);
+
+        result.stress_ewald = StressCalculator::compute_ewald_stress(
+            crystal_, pseudopotentials_);
+
+        result.stress = StressCalculator::compute_total_stress(
+            result.stress_kinetic, result.stress_hartree, result.stress_xc,
+            result.stress_local, result.stress_nonlocal, result.stress_ewald);
+
+        result.pressure_gpa = StressCalculator::pressure_gpa(result.stress);
+
+        if (is_root) {
+            std::printf("\nStress tensor (Ry/bohr^3):\n");
+            for (int a = 0; a < 3; ++a) {
+                std::printf("  %14.8f %14.8f %14.8f\n",
+                            result.stress[a][0], result.stress[a][1], result.stress[a][2]);
+            }
+            std::printf("  Pressure = %.4f GPa\n", result.pressure_gpa);
+
+            logger.info("stress", "Stress tensor computed",
+                {{"pressure_gpa", std::to_string(result.pressure_gpa)}});
+        }
     }
 
     // Store the converged effective potential for band structure calculations
@@ -1136,16 +1632,18 @@ SCFResult SCFSolver::solve() {
     result.total_energy_ev = result.total_energy_ry * constants::rydberg_to_ev;
     result.timing = TimerRegistry::instance().as_map();
 
-    if (result.converged) {
-        std::printf("\nCONVERGED in %d steps. Total energy: %.6f Ry (including Ewald: %.6f Ry)\n",
-                    result.scf_steps, result.total_energy_ry, result.ewald_energy);
-    } else {
-        std::printf("\nNOT CONVERGED after %d steps. Total energy: %.6f Ry\n",
-                    result.scf_steps, result.total_energy_ry);
-    }
-    if (nspin == 2) {
-        std::printf("  Magnetization: total = %.4f muB, absolute = %.4f muB\n",
-                    result.total_magnetization, result.absolute_magnetization);
+    if (is_root) {
+        if (result.converged) {
+            std::printf("\nCONVERGED in %d steps. Total energy: %.6f Ry (including Ewald: %.6f Ry)\n",
+                        result.scf_steps, result.total_energy_ry, result.ewald_energy);
+        } else {
+            std::printf("\nNOT CONVERGED after %d steps. Total energy: %.6f Ry\n",
+                        result.scf_steps, result.total_energy_ry);
+        }
+        if (nspin == 2) {
+            std::printf("  Magnetization: total = %.4f muB, absolute = %.4f muB\n",
+                        result.total_magnetization, result.absolute_magnetization);
+        }
     }
 
     return result;

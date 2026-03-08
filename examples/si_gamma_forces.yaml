@@ -1,0 +1,25 @@
+# Si diamond - Gamma-only for force symmetry test
+system:
+  lattice:
+    - [0.0, 2.6988, 2.6988]
+    - [2.6988, 0.0, 2.6988]
+    - [2.6988, 2.6988, 0.0]
+  atoms:
+    - {symbol: Si, position: [0.0, 0.0, 0.0]}
+    - {symbol: Si, position: [0.25, 0.25, 0.25]}
+
+calculation:
+  type: scf
+  ecutwfc: 18.0
+  xc: LDA_PZ
+  kpoints: [1, 1, 1, 0, 0, 0]
+  smearing: gaussian
+  degauss: 0.02
+
+pseudopotentials:
+  Si: pseudopotentials/Si.pz-vbc.UPF
+
+convergence:
+  energy: 1e-8
+  density: 1e-6
+  max_scf_steps: 100

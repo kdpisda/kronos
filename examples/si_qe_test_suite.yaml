@@ -1,0 +1,33 @@
+# Si diamond - validation against QE test-suite pw_scf/scf-kauto.in
+#
+# QE reference (benchmark.out.git.inp=scf-kauto.in):
+#   celldm(1) = 10.20, ecutwfc = 12 Ry, ibrav=2
+#   K_POINTS automatic 2 2 2 1 1 1
+#   No smearing
+#   Total energy = -15.79449593 Ry
+#   One-electron: 4.83378649, Hartree: 1.08429069
+#   XC: -4.81281453, Ewald: -16.89975858
+#
+system:
+  lattice:
+    - [0.0, 2.69880378, 2.69880378]
+    - [2.69880378, 0.0, 2.69880378]
+    - [2.69880378, 2.69880378, 0.0]
+  atoms:
+    - {symbol: Si, position: [0.0, 0.0, 0.0]}
+    - {symbol: Si, position: [0.25, 0.25, 0.25]}
+
+calculation:
+  type: scf
+  ecutwfc: 12.0
+  xc: LDA_PZ
+  kpoints: [2, 2, 2, 1, 1, 1]
+  smearing: none
+
+pseudopotentials:
+  Si: pseudopotentials/Si.pz-vbc.UPF
+
+convergence:
+  energy: 1e-10
+  density: 1.0
+  max_scf_steps: 100

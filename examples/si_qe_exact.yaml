@@ -1,0 +1,33 @@
+# Si diamond - exact match to Quantum ESPRESSO example01
+#
+# QE reference: pw.x with ibrav=2, celldm(1)=10.20, ecutwfc=18
+# K_POINTS {automatic}
+# 4 4 4 1 1 1
+# Total energy: -15.8445 Ry
+#
+system:
+  lattice:
+    # celldm(1) = 10.20 bohr, FCC primitive vectors in Angstrom
+    # a/2 = 10.20 * 0.529177 / 2 = 2.6988 Angstrom
+    - [0.0, 2.6988, 2.6988]
+    - [2.6988, 0.0, 2.6988]
+    - [2.6988, 2.6988, 0.0]
+  atoms:
+    - {symbol: Si, position: [0.0, 0.0, 0.0]}
+    - {symbol: Si, position: [0.25, 0.25, 0.25]}
+
+calculation:
+  type: scf
+  ecutwfc: 18.0
+  xc: LDA_PZ
+  kpoints: [4, 4, 4, 1, 1, 1]
+  smearing: gaussian
+  degauss: 0.02
+
+pseudopotentials:
+  Si: pseudopotentials/Si.pz-vbc.UPF
+
+convergence:
+  energy: 1e-8
+  density: 1e-6
+  max_scf_steps: 100

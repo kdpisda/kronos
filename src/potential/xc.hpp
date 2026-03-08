@@ -71,6 +71,32 @@ public:
                                         const RVec& sigma_r,
                                         double cell_volume) const;
 
+    /// Result of spin-polarized GGA evaluation.
+    struct SpinGGAResult {
+        RVec   vxc_up;      ///< dE/dn_up (vrho part) per grid point (Ry)
+        RVec   vxc_dn;      ///< dE/dn_dn (vrho part) per grid point (Ry)
+        RVec   vsigma_uu;   ///< dE/d(sigma_uu) per grid point (Ry)
+        RVec   vsigma_ud;   ///< dE/d(sigma_ud) per grid point (Ry)
+        RVec   vsigma_dd;   ///< dE/d(sigma_dd) per grid point (Ry)
+        double energy;       ///< Total E_xc (Ry)
+    };
+
+    /// Evaluate spin-polarized GGA XC functional.
+    ///
+    /// @param density_up   Spin-up electron density n_up(r).
+    /// @param density_dn   Spin-down electron density n_dn(r).
+    /// @param sigma_uu     |nabla n_up|^2
+    /// @param sigma_ud     nabla n_up . nabla n_dn
+    /// @param sigma_dd     |nabla n_dn|^2
+    /// @param cell_volume  Unit cell volume in bohr^3.
+    /// @return SpinGGAResult with vrho and vsigma for each spin.
+    [[nodiscard]] SpinGGAResult evaluate_spin_gga(const RVec& density_up,
+                                                    const RVec& density_dn,
+                                                    const RVec& sigma_uu,
+                                                    const RVec& sigma_ud,
+                                                    const RVec& sigma_dd,
+                                                    double cell_volume) const;
+
     /// True if the functional is of GGA type (requires density gradients).
     [[nodiscard]] bool is_gga() const;
 
@@ -103,6 +129,19 @@ private:
     SpinXCResult evaluate_builtin_lsda_pz(const RVec& density_up,
                                            const RVec& density_dn,
                                            double cell_volume) const;
+
+    // Built-in PBE GGA (unpolarized)
+    XCResult evaluate_builtin_pbe(const RVec& density_r,
+                                   const RVec& sigma_r,
+                                   double cell_volume) const;
+
+    // Built-in spin-polarized PBE GGA
+    SpinGGAResult evaluate_builtin_spin_pbe(const RVec& density_up,
+                                             const RVec& density_dn,
+                                             const RVec& sigma_uu,
+                                             const RVec& sigma_ud,
+                                             const RVec& sigma_dd,
+                                             double cell_volume) const;
 };
 
 } // namespace kronos

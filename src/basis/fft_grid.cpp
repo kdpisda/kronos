@@ -70,9 +70,7 @@ void FFTGrid::destroy_plans() {
 
 FFTGrid::FFTGrid(const PlaneWaveBasis& basis, double ecutrho) {
     // Scale the wavefunction max-miller indices by sqrt(ecutrho/ecutwfc).
-    // PlaneWaveBasis already computes max_miller using the QE formula
-    // floor(G_max_wfc / |b_i|) + 1, so scaling by 2 (for ecutrho = 4*ecutwfc)
-    // gives a grid that comfortably fits all density G-vectors and reduces
+    // This gives a grid that comfortably fits all density G-vectors and reduces
     // aliasing in the V_eff × ψ product.
     auto mm_wfc = basis.max_miller();
     double scale = std::sqrt(ecutrho / basis.ecutwfc());

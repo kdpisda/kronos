@@ -80,6 +80,8 @@ double PlaneWaveBasis::ecutwfc() const { return ecutwfc_; }
 
 std::array<int, 3> PlaneWaveBasis::max_miller() const { return max_miller_; }
 
+const Mat3& PlaneWaveBasis::reciprocal_lattice() const { return recip_lattice_; }
+
 // -------------------------------------------------------------------------
 // G-vector enumeration
 // -------------------------------------------------------------------------

@@ -1,0 +1,29 @@
+# Si diamond - using QE ibrav=2 lattice convention
+# v1 = a/2*(-1,0,1), v2 = a/2*(0,1,1), v3 = a/2*(-1,1,0)
+# celldm(1)=10.20 bohr, a/2 = 2.69880378 Angstrom
+#
+# QE reference (scf-kauto): -15.79449593 Ry
+#
+system:
+  lattice:
+    - [-2.69880378, 0.0, 2.69880378]
+    - [0.0, 2.69880378, 2.69880378]
+    - [-2.69880378, 2.69880378, 0.0]
+  atoms:
+    - {symbol: Si, position: [0.0, 0.0, 0.0]}
+    - {symbol: Si, position: [0.25, 0.25, 0.25]}
+
+calculation:
+  type: scf
+  ecutwfc: 12.0
+  xc: LDA_PZ
+  kpoints: [2, 2, 2, 1, 1, 1]
+  smearing: none
+
+pseudopotentials:
+  Si: pseudopotentials/Si.pz-vbc.UPF
+
+convergence:
+  energy: 1e-10
+  density: 1.0
+  max_scf_steps: 100

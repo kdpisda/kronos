@@ -39,6 +39,9 @@ public:
     // Maximum Miller index in each direction
     std::array<int, 3> max_miller() const;
 
+    // Reciprocal lattice vectors (for FFT grid computation)
+    const Mat3& reciprocal_lattice() const;
+
 private:
     double ecutwfc_;
     double gvec_cutoff_;   // actual G-vector sphere cutoff (>= ecutwfc when k_max > 0)
