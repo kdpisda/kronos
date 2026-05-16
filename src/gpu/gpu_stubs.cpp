@@ -1,11 +1,40 @@
 #include "gpu/fft.hpp"
 #include "gpu/blas.hpp"
 #include "gpu/memory.hpp"
+#include "gpu/gpu_context.hpp"
 
 namespace kronos::gpu {
 
 static const char* GPU_NOT_AVAILABLE_MSG =
     "GPU support not compiled. Build with -DKRONOS_GPU_BACKEND=cuda or hip";
+
+// ---------------------------------------------------------------------------
+// GPUContext stubs
+// ---------------------------------------------------------------------------
+
+GPUContext& GPUContext::instance() {
+    static GPUContext ctx;
+    return ctx;
+}
+
+void GPUContext::init(int /*mpi_rank*/, int /*local_rank*/) {
+    // No GPU available in CPU-only build
+    initialized_ = false;
+    num_devices_ = 0;
+    device_name_ = "none (CPU-only build)";
+}
+
+void GPUContext::finalize() {
+    initialized_ = false;
+}
+
+GPUContext::~GPUContext() {
+    finalize();
+}
+
+void GPUContext::set_deterministic(bool /*enable*/) {
+    // No-op in CPU-only build
+}
 
 // ---------------------------------------------------------------------------
 // GPUFFTGrid stubs
