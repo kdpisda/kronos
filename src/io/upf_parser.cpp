@@ -415,6 +415,138 @@ PseudoPotential parse_upf(const std::string& filepath) {
         wfc.values = detail::parse_doubles_from_string(chi_body);
     }
 
+    // ------------------------------------------------------------------
+    // PAW sections (only if this is a PAW pseudopotential)
+    // ------------------------------------------------------------------
+    if (pp.is_paw) {
+        PAWData paw;
+
+        // PP_PAW -> core_energy attribute
+        {
+            size_t paw_tag_end = 0;
+            std::string paw_tag = detail::find_open_tag(content, "PP_PAW", 0, paw_tag_end);
+            if (paw_tag_end != std::string::npos) {
+                paw.core_energy = detail::safe_stod(
+                    detail::extract_attribute(paw_tag, "core_energy"));
+            }
+        }
+
+        // PP_AEWFC.i — all-electron partial waves
+        paw.ae_wfc.resize(static_cast<size_t>(pp.num_projectors));
+        for (int iw = 1; iw <= pp.num_projectors; ++iw) {
+            std::string tag_name = "PP_AEWFC." + std::to_string(iw);
+            std::string body = detail::extract_tag_body(content, tag_name);
+            if (!body.empty()) {
+                paw.ae_wfc[static_cast<size_t>(iw - 1)] =
+                    detail::parse_doubles_from_string(body);
+            }
+        }
+
+        // PP_PSWFC.i — pseudo partial waves (for PAW, distinct from PP_CHI)
+        paw.ps_wfc.resize(static_cast<size_t>(pp.num_projectors));
+        for (int iw = 1; iw <= pp.num_projectors; ++iw) {
+            std::string tag_name = "PP_PSWFC." + std::to_string(iw);
+            std::string body = detail::extract_tag_body(content, tag_name);
+            if (!body.empty()) {
+                paw.ps_wfc[static_cast<size_t>(iw - 1)] =
+                    detail::parse_doubles_from_string(body);
+            }
+        }
+
+        // PP_AE_NLCC — all-electron core charge
+        {
+            std::string body = detail::extract_tag_body(content, "PP_AE_NLCC");
+            if (!body.empty()) {
+                paw.ae_core_charge = detail::parse_doubles_from_string(body);
+            }
+        }
+
+        // PP_NLCC — pseudo core charge
+        {
+            std::string body = detail::extract_tag_body(content, "PP_NLCC");
+            if (!body.empty()) {
+                paw.ps_core_charge = detail::parse_doubles_from_string(body);
+            }
+        }
+
+        // PP_Q — augmentation charges Q_ij (try PP_QIJL.n format first,
+        // fallback to PP_Q with embedded Q_ij)
+        {
+            // Try numbered QIJL sections
+            int q_count = 0;
+            for (int iq = 1; iq <= pp.num_projectors * pp.num_projectors; ++iq) {
+                std::string tag_name = "PP_QIJL." + std::to_string(iq);
+                size_t tag_end = 0;
+                std::string tag = detail::find_open_tag(content, tag_name, 0, tag_end);
+                if (tag_end == std::string::npos) break;
+
+                PAWAugmentation aug;
+                aug.i = detail::safe_stoi(
+                    detail::extract_attribute(tag, "first_index")) - 1;
+                aug.j = detail::safe_stoi(
+                    detail::extract_attribute(tag, "second_index")) - 1;
+                aug.l = detail::safe_stoi(
+                    detail::extract_attribute(tag, "angular_momentum"));
+
+                std::string body = detail::extract_tag_body(content, tag_name);
+                aug.qfunc = detail::parse_doubles_from_string(body);
+
+                // Compute integral: ∫ Q_ij(r) r² dr using Simpson with rab
+                aug.q_integral = 0.0;
+                int npts = std::min(static_cast<int>(aug.qfunc.size()),
+                                    pp.mesh.npoints);
+                for (int ir = 0; ir < npts; ++ir) {
+                    aug.q_integral += aug.qfunc[ir] * pp.mesh.rab[ir];
+                }
+
+                paw.augmentation.push_back(std::move(aug));
+                ++q_count;
+            }
+
+            // Also try the QE-style PP_Q_WITH_L format
+            if (q_count == 0) {
+                for (int iq = 1; iq <= pp.num_projectors * pp.num_projectors; ++iq) {
+                    std::string tag_name = "PP_Q." + std::to_string(iq);
+                    size_t tag_end = 0;
+                    std::string tag = detail::find_open_tag(content, tag_name, 0, tag_end);
+                    if (tag_end == std::string::npos) break;
+
+                    PAWAugmentation aug;
+                    aug.i = detail::safe_stoi(
+                        detail::extract_attribute(tag, "first_index")) - 1;
+                    aug.j = detail::safe_stoi(
+                        detail::extract_attribute(tag, "second_index")) - 1;
+                    aug.l = detail::safe_stoi(
+                        detail::extract_attribute(tag, "angular_momentum"));
+
+                    std::string body = detail::extract_tag_body(content, tag_name);
+                    aug.qfunc = detail::parse_doubles_from_string(body);
+
+                    aug.q_integral = 0.0;
+                    int npts = std::min(static_cast<int>(aug.qfunc.size()),
+                                        pp.mesh.npoints);
+                    for (int ir = 0; ir < npts; ++ir) {
+                        aug.q_integral += aug.qfunc[ir] * pp.mesh.rab[ir];
+                    }
+
+                    paw.augmentation.push_back(std::move(aug));
+                }
+            }
+        }
+
+        // PAW sphere radius
+        {
+            size_t paw_tag_end = 0;
+            std::string paw_tag = detail::find_open_tag(content, "PP_PAW", 0, paw_tag_end);
+            if (paw_tag_end != std::string::npos) {
+                paw.r_paw = detail::safe_stod(
+                    detail::extract_attribute(paw_tag, "paw_radius"));
+            }
+        }
+
+        pp.paw = std::move(paw);
+    }
+
     return pp;
 }
 
@@ -483,12 +615,26 @@ void validate_pseudopotential(const PseudoPotential& pp) {
         }
     }
 
-    // Warn (but do not throw) for non-norm-conserving PP in v0.1
-    if (!pp.is_norm_conserving) {
+    // PAW-specific validation
+    if (pp.is_paw && pp.paw.has_value()) {
+        const auto& paw = pp.paw.value();
+
+        // AE/PS wfc count should match projector count
+        if (static_cast<int>(paw.ae_wfc.size()) != pp.num_projectors) {
+            std::cerr << "KRONOS warning: PAW PP for " << pp.element
+                      << ": AE wfc count (" << paw.ae_wfc.size()
+                      << ") != num_projectors (" << pp.num_projectors << ")\n";
+        }
+        if (static_cast<int>(paw.ps_wfc.size()) != pp.num_projectors) {
+            std::cerr << "KRONOS warning: PAW PP for " << pp.element
+                      << ": PS wfc count (" << paw.ps_wfc.size()
+                      << ") != num_projectors (" << pp.num_projectors << ")\n";
+        }
+    } else if (!pp.is_norm_conserving && !pp.is_paw) {
+        // Warn for non-NC, non-PAW (i.e., ultrasoft) PPs
         std::cerr << "KRONOS warning: pseudopotential for " << pp.element
                   << " is type '" << pp.pp_type
-                  << "' (not norm-conserving). "
-                  << "KRONOS v0.1 only supports norm-conserving PP.\n";
+                  << "' (ultrasoft). PAW or NC recommended.\n";
     }
 }
 

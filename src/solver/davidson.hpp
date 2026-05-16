@@ -34,12 +34,14 @@ public:
     // num_bands: number of eigenvalues/vectors to find
     // num_pw: number of plane waves (dimension of the problem)
     // initial_guess: optional starting vectors (if empty, random initialization)
+    // s_apply: optional overlap operator S for generalized eigenvalue H|ψ⟩=ε S|ψ⟩
     EigenResult solve(
         const std::function<CVec(const CVec&)>& h_apply,
         const std::vector<double>& preconditioner,
         int num_bands,
         int num_pw,
-        const std::vector<CVec>& initial_guess = {});
+        const std::vector<CVec>& initial_guess = {},
+        const std::function<CVec(const CVec&)>& s_apply = nullptr);
 
 private:
     Params params_;
@@ -48,10 +50,16 @@ private:
     static void orthogonalize(std::vector<CVec>& vectors);
 
     // Solve the projected eigenvalue problem (subspace diagonalization)
-    // H_sub = V^H * H * V, S_sub = V^H * V
+    // H_sub = V^H * H * V, S_sub = V^H * S * V (identity if no S)
     // Returns eigenvalues and rotation matrix
     static EigenResult solve_subspace(
         const std::vector<std::vector<complex_t>>& h_sub,
+        int num_bands);
+
+    // Solve generalized subspace eigenvalue problem H_sub c = λ S_sub c
+    static EigenResult solve_subspace_generalized(
+        const std::vector<std::vector<complex_t>>& h_sub,
+        const std::vector<std::vector<complex_t>>& s_sub,
         int num_bands);
 
     // Apply diagonal preconditioner to residual

@@ -2,6 +2,7 @@
 #include "core/types.hpp"
 #include <string>
 #include <vector>
+#include <optional>
 #include <stdexcept>
 
 namespace kronos {
@@ -31,6 +32,27 @@ struct AtomicWavefunction {
     double occupation{0.0};
     std::string label;
     std::vector<double> values;  // chi(r) on radial grid
+};
+
+// PAW augmentation charge Q_ij^l(r)
+struct PAWAugmentation {
+    int i{0};                      // First projector index
+    int j{0};                      // Second projector index
+    int l{0};                      // Angular momentum of augmentation
+    std::vector<double> qfunc;     // Q_ij^l(r) on radial grid
+    double q_integral{0.0};        // ∫ Q_ij(r) dr for overlap
+};
+
+// PAW-specific data from UPF file
+struct PAWData {
+    double core_energy{0.0};                          // One-center core energy (Ry)
+    std::vector<std::vector<double>> ae_wfc;          // All-electron partial waves φ_i(r)
+    std::vector<std::vector<double>> ps_wfc;          // Pseudo partial waves φ~_i(r)
+    std::vector<double> ae_core_charge;               // All-electron core charge density
+    std::vector<double> ps_core_charge;               // Pseudo core charge density (NLCC)
+    std::vector<PAWAugmentation> augmentation;        // Q_ij^l(r) augmentation charges
+    double r_paw{0.0};                                // PAW sphere radius (bohr)
+    std::vector<std::vector<double>> ae_vloc;         // AE local potential (optional)
 };
 
 // Complete pseudopotential data
@@ -69,6 +91,9 @@ struct PseudoPotential {
 
     // Atomic wavefunctions (for initial density)
     std::vector<AtomicWavefunction> atomic_wfc;
+
+    // PAW data (present only for PAW pseudopotentials)
+    std::optional<PAWData> paw;
 };
 
 // Parse a UPF v2 pseudopotential file

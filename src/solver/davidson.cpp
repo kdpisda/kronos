@@ -7,11 +7,18 @@
 #include <random>
 #include <stdexcept>
 
-// LAPACK declaration for complex Hermitian eigenvalue problem
+// LAPACK declarations for complex Hermitian eigenvalue problems
 extern "C" {
     void zheev_(const char* jobz, const char* uplo, const int* n,
                 std::complex<double>* a, const int* lda, double* w,
                 std::complex<double>* work, const int* lwork,
+                double* rwork, int* info);
+
+    // Generalized Hermitian eigenvalue problem: A*x = λ*B*x
+    void zhegv_(const int* itype, const char* jobz, const char* uplo,
+                const int* n, std::complex<double>* a, const int* lda,
+                std::complex<double>* b, const int* ldb,
+                double* w, std::complex<double>* work, const int* lwork,
                 double* rwork, int* info);
 }
 
@@ -137,6 +144,64 @@ EigenResult DavidsonSolver::solve_subspace(
     return result;
 }
 
+EigenResult DavidsonSolver::solve_subspace_generalized(
+    const std::vector<std::vector<complex_t>>& h_sub,
+    const std::vector<std::vector<complex_t>>& s_sub,
+    int num_bands)
+{
+    const int m = static_cast<int>(h_sub.size());
+    assert(m > 0);
+    assert(num_bands <= m);
+    assert(static_cast<int>(s_sub.size()) == m);
+
+    // Pack into column-major format
+    std::vector<complex_t> a_mat(m * m);
+    std::vector<complex_t> b_mat(m * m);
+    for (int i = 0; i < m; ++i) {
+        for (int j = 0; j < m; ++j) {
+            a_mat[i + j * m] = h_sub[i][j];
+            b_mat[i + j * m] = s_sub[i][j];
+        }
+    }
+
+    std::vector<double> eigenvalues(m);
+
+    // Workspace query
+    int itype = 1;  // A*x = λ*B*x
+    int lwork = -1;
+    int info = 0;
+    std::vector<double> rwork(std::max(1, 3 * m - 2));
+    complex_t work_query;
+    zhegv_(&itype, "V", "U", &m, a_mat.data(), &m, b_mat.data(), &m,
+           eigenvalues.data(), &work_query, &lwork, rwork.data(), &info);
+
+    lwork = static_cast<int>(work_query.real());
+    std::vector<complex_t> work(lwork);
+
+    // Actual diagonalization
+    zhegv_(&itype, "V", "U", &m, a_mat.data(), &m, b_mat.data(), &m,
+           eigenvalues.data(), work.data(), &lwork, rwork.data(), &info);
+
+    if (info != 0) {
+        throw std::runtime_error("zhegv failed in Davidson generalized subspace, info = "
+                                 + std::to_string(info));
+    }
+
+    EigenResult result;
+    result.eigenvalues.assign(eigenvalues.begin(),
+                              eigenvalues.begin() + num_bands);
+
+    result.eigenvectors.resize(num_bands);
+    for (int n = 0; n < num_bands; ++n) {
+        result.eigenvectors[n].resize(m);
+        for (int i = 0; i < m; ++i) {
+            result.eigenvectors[n][i] = a_mat[i + n * m];
+        }
+    }
+
+    return result;
+}
+
 CVec DavidsonSolver::apply_preconditioner(
     const CVec& residual,
     double eigenvalue,
@@ -163,8 +228,10 @@ EigenResult DavidsonSolver::solve(
     const std::vector<double>& preconditioner,
     int num_bands,
     int num_pw,
-    const std::vector<CVec>& initial_guess)
+    const std::vector<CVec>& initial_guess,
+    const std::function<CVec(const CVec&)>& s_apply)
 {
+    const bool use_generalized = (s_apply != nullptr);
     assert(num_bands > 0);
     assert(num_pw > 0);
     assert(static_cast<int>(preconditioner.size()) == num_pw);
@@ -203,11 +270,14 @@ EigenResult DavidsonSolver::solve(
     // Orthogonalize initial basis
     orthogonalize(V);
 
-    // 2. Apply H to all basis vectors, store H*V
+    // 2. Apply H (and optionally S) to all basis vectors
     std::vector<CVec> HV;
+    std::vector<CVec> SV;  // S*V for generalized eigenvalue problem
     HV.reserve(max_subspace);
+    if (use_generalized) SV.reserve(max_subspace);
     for (const auto& v : V) {
         HV.push_back(h_apply(v));
+        if (use_generalized) SV.push_back(s_apply(v));
     }
 
     EigenResult final_result;
@@ -226,32 +296,61 @@ EigenResult DavidsonSolver::solve(
             }
         }
 
-        // 2c. Diagonalize H_sub
+        // 2c. Diagonalize (standard or generalized)
         int bands_to_solve = std::min(num_bands, m);
-        auto sub_result = solve_subspace(h_sub, bands_to_solve);
+        EigenResult sub_result;
+
+        if (use_generalized) {
+            // Build S_sub[i][j] = <V_i|S|V_j>
+            std::vector<std::vector<complex_t>> s_sub(m, std::vector<complex_t>(m));
+            for (int i = 0; i < m; ++i) {
+                for (int j = i; j < m; ++j) {
+                    complex_t val = dot_product(V[i], SV[j]);
+                    s_sub[i][j] = val;
+                    s_sub[j][i] = std::conj(val);
+                }
+            }
+            sub_result = solve_subspace_generalized(h_sub, s_sub, bands_to_solve);
+        } else {
+            sub_result = solve_subspace(h_sub, bands_to_solve);
+        }
 
         // 2d. Compute Ritz vectors: psi_n = sum_i c_ni * V_i
-        // and H*psi_n = sum_i c_ni * HV_i
+        // and H*psi_n = sum_i c_ni * HV_i (and S*psi if generalized)
         std::vector<CVec> ritz_vecs(bands_to_solve, CVec(num_pw, {0.0, 0.0}));
         std::vector<CVec> h_ritz_vecs(bands_to_solve, CVec(num_pw, {0.0, 0.0}));
+        std::vector<CVec> s_ritz_vecs;
+        if (use_generalized) {
+            s_ritz_vecs.assign(bands_to_solve, CVec(num_pw, {0.0, 0.0}));
+        }
 
         for (int n = 0; n < bands_to_solve; ++n) {
             for (int i = 0; i < m; ++i) {
                 complex_t c = sub_result.eigenvectors[n][i];
                 axpy(ritz_vecs[n], c, V[i]);
                 axpy(h_ritz_vecs[n], c, HV[i]);
+                if (use_generalized) {
+                    axpy(s_ritz_vecs[n], c, SV[i]);
+                }
             }
         }
 
-        // 2e. Compute residuals: r_n = H|psi_n> - epsilon_n * |psi_n>
+        // 2e. Compute residuals: r_n = H|ψ⟩ - ε_n * (S|ψ⟩ or |ψ⟩)
         std::vector<CVec> residuals(bands_to_solve);
         double max_residual = 0.0;
 
         for (int n = 0; n < bands_to_solve; ++n) {
             residuals[n].resize(num_pw);
-            for (int i = 0; i < num_pw; ++i) {
-                residuals[n][i] = h_ritz_vecs[n][i]
-                                  - sub_result.eigenvalues[n] * ritz_vecs[n][i];
+            if (use_generalized) {
+                for (int i = 0; i < num_pw; ++i) {
+                    residuals[n][i] = h_ritz_vecs[n][i]
+                                      - sub_result.eigenvalues[n] * s_ritz_vecs[n][i];
+                }
+            } else {
+                for (int i = 0; i < num_pw; ++i) {
+                    residuals[n][i] = h_ritz_vecs[n][i]
+                                      - sub_result.eigenvalues[n] * ritz_vecs[n][i];
+                }
             }
             double rnorm = vec_norm(residuals[n]);
             max_residual = std::max(max_residual, rnorm);
@@ -270,11 +369,12 @@ EigenResult DavidsonSolver::solve(
         // 2g-i. Apply preconditioner and expand subspace
         // Check if subspace is too large -> restart
         if (m + bands_to_solve > max_subspace) {
-            // Restart: replace V with current Ritz vectors
             V = ritz_vecs;
             HV.clear();
+            if (use_generalized) SV.clear();
             for (const auto& v : V) {
                 HV.push_back(h_apply(v));
+                if (use_generalized) SV.push_back(s_apply(v));
             }
             continue;
         }
@@ -296,19 +396,17 @@ EigenResult DavidsonSolver::solve(
 
             double tnorm = vec_norm(t);
             if (tnorm > 1e-10) {
-                // Normalize and add
                 complex_t inv_norm{1.0 / tnorm, 0.0};
                 for (auto& x : t) {
                     x *= inv_norm;
                 }
                 V.push_back(t);
                 HV.push_back(h_apply(t));
+                if (use_generalized) SV.push_back(s_apply(t));
                 ++vectors_added;
             }
         }
 
-        // If no new vectors could be added (preconditioner is too exact),
-        // the subspace cannot expand further — stop iterating
         if (vectors_added == 0) {
             final_result.eigenvalues = sub_result.eigenvalues;
             final_result.eigenvectors = std::move(ritz_vecs);
@@ -324,7 +422,6 @@ EigenResult DavidsonSolver::solve(
         final_result.max_residual = max_residual;
     }
 
-    // Did not converge within max_iterations
     final_result.converged = false;
     return final_result;
 }

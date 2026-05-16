@@ -426,4 +426,81 @@ int NonlocalPP::num_projectors() const
     return total;
 }
 
+// ===================================================================
+// compute_projections  --  <β_j|ψ> for all atoms
+// ===================================================================
+
+std::vector<std::vector<complex_t>> NonlocalPP::compute_projections(const CVec& psi_g) const
+{
+    const size_t npw = basis_.num_pw();
+    assert(psi_g.size() == npw);
+
+    // Must have cached beta for the current k-point
+    assert(!cached_beta_kg_.empty());
+
+    std::vector<std::vector<complex_t>> projections(atom_data_.size());
+
+    for (size_t ia = 0; ia < atom_data_.size(); ++ia) {
+        const auto& ad = atom_data_[ia];
+        const int nproj = ad.num_expanded;
+        const auto& beta_kg = cached_beta_kg_[ia];
+
+        projections[ia].resize(nproj);
+        for (int j = 0; j < nproj; ++j) {
+            complex_t sum{0.0, 0.0};
+            for (size_t ig = 0; ig < npw; ++ig) {
+                sum += std::conj(beta_kg[j][ig]) * psi_g[ig];
+            }
+            projections[ia][j] = sum;
+        }
+    }
+
+    return projections;
+}
+
+// ===================================================================
+// save_base_dij / reset_dij / add_dij_correction
+// ===================================================================
+
+void NonlocalPP::save_base_dij()
+{
+    dij_base_.resize(atom_data_.size());
+    for (size_t ia = 0; ia < atom_data_.size(); ++ia) {
+        dij_base_[ia] = atom_data_[ia].dij;
+    }
+}
+
+void NonlocalPP::reset_dij()
+{
+    assert(dij_base_.size() == atom_data_.size());
+    for (size_t ia = 0; ia < atom_data_.size(); ++ia) {
+        atom_data_[ia].dij = dij_base_[ia];
+    }
+}
+
+void NonlocalPP::add_dij_correction(size_t atom_idx, const std::vector<double>& correction)
+{
+    assert(atom_idx < atom_data_.size());
+    auto& ad = atom_data_[atom_idx];
+    const int nproj_expanded = ad.num_expanded;
+    const int nproj_upf = static_cast<int>(ad.projectors.size());
+
+    // correction is in UPF projector indices: correction[i_upf * nproj_upf + j_upf]
+    // Map to expanded (l,m) basis: D_expanded[ei][ej] += correction[i_upf][j_upf]
+    // only when expanded_map[ei].upf_beta_index == i_upf,
+    //           expanded_map[ej].upf_beta_index == j_upf,
+    //           and expanded_map[ei].m == expanded_map[ej].m
+    for (int ei = 0; ei < nproj_expanded; ++ei) {
+        const auto& map_i = ad.expanded_map[ei];
+        for (int ej = 0; ej < nproj_expanded; ++ej) {
+            const auto& map_j = ad.expanded_map[ej];
+            if (map_i.l == map_j.l && map_i.m == map_j.m) {
+                int i_upf = map_i.upf_beta_index;
+                int j_upf = map_j.upf_beta_index;
+                ad.dij[ei][ej] += correction[i_upf * nproj_upf + j_upf];
+            }
+        }
+    }
+}
+
 } // namespace kronos
