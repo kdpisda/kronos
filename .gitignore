@@ -39,3 +39,21 @@
 
 # debug information files
 *.dwo
+
+# Build directories
+build/
+build_*/
+Testing/
+
+# CTest auto-generated discovery artifacts
+test/cmake_test_discovery_*.json
+
+# Worktrees
+.worktrees/
+
+# Runtime output
+kronos.out.json
+
+# Superpowers session artifacts (specs/plans live in docs/superpowers/)
+# Commit these intentionally — they're our design history.
+
