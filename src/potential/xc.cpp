@@ -128,6 +128,11 @@ bool XCEvaluator::is_gga() const
     return is_gga_;
 }
 
+bool XCEvaluator::is_hybrid() const
+{
+    return hybrid_type_ != HybridType::None;
+}
+
 // ---------------------------------------------------------------------------
 // init_functional  --  map name -> libxc IDs, then initialise
 // ---------------------------------------------------------------------------
@@ -158,6 +163,26 @@ void XCEvaluator::init_functional()
 #ifdef KRONOS_HAS_LIBXC
         x_func_id_ = XC_GGA_X_PBE_SOL;
         c_func_id_ = XC_GGA_C_PBE_SOL;
+#endif
+    } else if (name_ == "PBE0") {
+        is_gga_ = true;
+        hybrid_type_ = HybridType::PBE0;
+        exx_fraction_ = 0.25;
+        screening_parameter_ = 0.0;
+        // Semi-local part: (1-α) PBE exchange + PBE correlation
+#ifdef KRONOS_HAS_LIBXC
+        x_func_id_ = XC_GGA_X_PBE;
+        c_func_id_ = XC_GGA_C_PBE;
+#endif
+    } else if (name_ == "HSE06") {
+        is_gga_ = true;
+        hybrid_type_ = HybridType::HSE06;
+        exx_fraction_ = 0.25;
+        screening_parameter_ = 0.11;  // bohr⁻¹
+        // Semi-local part: short-range PBE exchange + PBE correlation
+#ifdef KRONOS_HAS_LIBXC
+        x_func_id_ = XC_GGA_X_PBE;
+        c_func_id_ = XC_GGA_C_PBE;
 #endif
     } else {
         throw std::invalid_argument("XCEvaluator: unknown functional '" +
@@ -284,6 +309,13 @@ XCResult XCEvaluator::evaluate(const RVec& density_r,
 
     // Evaluate exchange part
     eval_func(x_func_);
+    // Scale semi-local exchange for hybrids: (1-α) factor
+    if (exchange_scale_ != 1.0) {
+        for (int i = 0; i < np; ++i) {
+            result.exc[i] *= exchange_scale_;
+            result.vxc[i] *= exchange_scale_;
+        }
+    }
     // Evaluate correlation part
     eval_func(c_func_);
     // If a combined XC functional was used, evaluate it too
@@ -386,6 +418,14 @@ XCResult XCEvaluator::evaluate_gga(const RVec& density_r,
 
     // Evaluate exchange part
     eval_func(x_func_);
+    // Scale semi-local exchange for hybrids: (1-α) factor
+    if (exchange_scale_ != 1.0) {
+        for (int i = 0; i < np; ++i) {
+            result.exc[i] *= exchange_scale_;
+            result.vxc[i] *= exchange_scale_;
+            result.vsigma[i] *= exchange_scale_;
+        }
+    }
     // Evaluate correlation part
     eval_func(c_func_);
     // If a combined XC functional was used, evaluate it too
@@ -405,7 +445,7 @@ XCResult XCEvaluator::evaluate_gga(const RVec& density_r,
 
 #else
     // No libxc -- use built-in PBE if available
-    if (name_ == "PBE" || name_ == "PBEsol") {
+    if (name_ == "PBE" || name_ == "PBEsol" || name_ == "PBE0" || name_ == "HSE06") {
         return evaluate_builtin_pbe(density_r, sigma_r, cell_volume);
     }
     std::cerr << "[kronos] WARNING: GGA functional '" << name_
@@ -438,13 +478,14 @@ XCResult XCEvaluator::evaluate_builtin_lda_pz(const RVec& density_r,
     builtin::lda_x(density_r.data(), ex.data(), vx.data(), np);
     builtin::lda_c_pz(density_r.data(), ec.data(), vc.data(), np);
 
-    // Sum exchange + correlation
+    // Sum exchange (scaled) + correlation
     const double dv = cell_volume / static_cast<double>(np);
     double esum = 0.0;
+    const double xs = exchange_scale_;
 
     for (int i = 0; i < np; ++i) {
-        result.exc[i] = ex[i] + ec[i];
-        result.vxc[i] = vx[i] + vc[i];
+        result.exc[i] = xs * ex[i] + ec[i];
+        result.vxc[i] = xs * vx[i] + vc[i];
         esum += result.exc[i] * std::max(density_r[i], 0.0);
     }
 
@@ -527,6 +568,14 @@ XCEvaluator::SpinXCResult XCEvaluator::evaluate_spin(
     };
 
     eval_func_spin(x_func_id_);
+    // Scale semi-local exchange for hybrids
+    if (exchange_scale_ != 1.0) {
+        for (int i = 0; i < np; ++i) {
+            result.vxc_up[i] *= exchange_scale_;
+            result.vxc_dn[i] *= exchange_scale_;
+        }
+        result.energy *= exchange_scale_;
+    }
     eval_func_spin(c_func_id_);
 
     return result;
@@ -692,11 +741,12 @@ XCEvaluator::SpinXCResult XCEvaluator::evaluate_builtin_lsda_pz(
 
     const double dv = cell_volume / static_cast<double>(np);
     double esum = 0.0;
+    const double xs = exchange_scale_;
 
     for (int i = 0; i < np; ++i) {
-        double exc = ex[i] + ec[i];
-        result.vxc_up[i] = vx_up[i] + vc_up[i];
-        result.vxc_dn[i] = vx_dn[i] + vc_dn[i];
+        double exc = xs * ex[i] + ec[i];
+        result.vxc_up[i] = xs * vx_up[i] + vc_up[i];
+        result.vxc_dn[i] = xs * vx_dn[i] + vc_dn[i];
         double n = std::max(density_up[i], 0.0) + std::max(density_dn[i], 0.0);
         esum += exc * n;
     }
@@ -794,6 +844,17 @@ XCEvaluator::SpinGGAResult XCEvaluator::evaluate_spin_gga(
     };
 
     eval_func_spin(x_func_id_);
+    // Scale semi-local exchange for hybrids
+    if (exchange_scale_ != 1.0) {
+        for (int i = 0; i < np; ++i) {
+            result.vxc_up[i] *= exchange_scale_;
+            result.vxc_dn[i] *= exchange_scale_;
+            result.vsigma_uu[i] *= exchange_scale_;
+            result.vsigma_ud[i] *= exchange_scale_;
+            result.vsigma_dd[i] *= exchange_scale_;
+        }
+        result.energy *= exchange_scale_;
+    }
     eval_func_spin(c_func_id_);
 
     return result;
@@ -1234,10 +1295,11 @@ XCResult XCEvaluator::evaluate_builtin_pbe(const RVec& density_r,
 
     const double dv = cell_volume / static_cast<double>(np);
     double esum = 0.0;
+    const double xs = exchange_scale_;
     for (int i = 0; i < np; ++i) {
-        result.exc[i] = ex[i] + ec[i];
-        result.vxc[i] = vr_x[i] + vr_c[i];
-        result.vsigma[i] = vs_x[i] + vs_c[i];
+        result.exc[i] = xs * ex[i] + ec[i];
+        result.vxc[i] = xs * vr_x[i] + vr_c[i];
+        result.vsigma[i] = xs * vs_x[i] + vs_c[i];
         esum += result.exc[i] * std::max(density_r[i], 0.0);
     }
     result.energy = dv * esum;
@@ -1282,15 +1344,16 @@ XCEvaluator::SpinGGAResult XCEvaluator::evaluate_builtin_spin_pbe(
 
     const double dv = cell_volume / static_cast<double>(np);
     double esum = 0.0;
+    const double xs = exchange_scale_;
     for (int i = 0; i < np; ++i) {
-        double exc = ex[i] + ec[i];
+        double exc = xs * ex[i] + ec[i];
         double n = std::max(density_up[i], 0.0) + std::max(density_dn[i], 0.0);
         esum += exc * n;
-        result.vxc_up[i] = vr_x_up[i] + vr_c_up[i];
-        result.vxc_dn[i] = vr_x_dn[i] + vr_c_dn[i];
-        result.vsigma_uu[i] = vs_x_uu[i] + vs_c_uu[i];
+        result.vxc_up[i] = xs * vr_x_up[i] + vr_c_up[i];
+        result.vxc_dn[i] = xs * vr_x_dn[i] + vr_c_dn[i];
+        result.vsigma_uu[i] = xs * vs_x_uu[i] + vs_c_uu[i];
         result.vsigma_ud[i] = vs_c_ud[i];  // exchange has no cross-spin sigma
-        result.vsigma_dd[i] = vs_x_dd[i] + vs_c_dd[i];
+        result.vsigma_dd[i] = xs * vs_x_dd[i] + vs_c_dd[i];
     }
     result.energy = dv * esum;
     return result;

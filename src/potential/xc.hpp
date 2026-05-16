@@ -8,6 +8,9 @@
 
 namespace kronos {
 
+/// Type of hybrid functional
+enum class HybridType { None, PBE0, HSE06 };
+
 /// Result of an exchange-correlation evaluation on a real-space grid.
 struct XCResult {
     RVec   exc;    ///< Energy density per grid point (Ry).
@@ -100,12 +103,35 @@ public:
     /// True if the functional is of GGA type (requires density gradients).
     [[nodiscard]] bool is_gga() const;
 
+    /// True if the functional is a hybrid (requires exact exchange).
+    [[nodiscard]] bool is_hybrid() const;
+
+    /// Get the hybrid type (None, PBE0, HSE06).
+    [[nodiscard]] HybridType hybrid_type() const { return hybrid_type_; }
+
+    /// Get the exact exchange fraction (0.25 for PBE0/HSE06, 0 otherwise).
+    [[nodiscard]] double exx_fraction() const { return exx_fraction_; }
+
+    /// Get the screening parameter (HSE06: 0.11 bohr⁻¹, 0 otherwise).
+    [[nodiscard]] double screening_parameter() const { return screening_parameter_; }
+
+    /// Set scaling factor for semi-local exchange (1-α for hybrids).
+    /// Default is 1.0 (full exchange). Call with (1-exx_fraction) for hybrids.
+    void set_exchange_scale(double scale) { exchange_scale_ = scale; }
+
+    /// Get the current exchange scaling factor.
+    [[nodiscard]] double exchange_scale() const { return exchange_scale_; }
+
     /// Return the functional name supplied at construction.
     [[nodiscard]] const std::string& name() const;
 
 private:
     std::string name_;
     bool is_gga_{false};
+    HybridType hybrid_type_{HybridType::None};
+    double exx_fraction_{0.0};
+    double screening_parameter_{0.0};
+    double exchange_scale_{1.0};
 
     // libxc functional IDs  (-1 = unused)
     int xc_func_id_{-1};   // combined XC (unused for now)

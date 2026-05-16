@@ -229,11 +229,11 @@ CalculationParams parse_calculation(const YAML::Node& calc) {
     if (calc["xc"]) {
         std::string xc = calc["xc"].as<std::string>();
         static const std::set<std::string> valid_xc = {
-            "LDA_PZ", "LDA_PW", "PBE", "PBEsol"
+            "LDA_PZ", "LDA_PW", "PBE", "PBEsol", "PBE0", "HSE06"
         };
         if (valid_xc.find(xc) == valid_xc.end()) {
             throw InputValidationError(
-                "calculation.xc: must be one of LDA_PZ, LDA_PW, PBE, PBEsol; "
+                "calculation.xc: must be one of LDA_PZ, LDA_PW, PBE, PBEsol, PBE0, HSE06; "
                 "got '" + xc + "'");
         }
         params.xc_functional = xc;
@@ -315,6 +315,24 @@ CalculationParams parse_calculation(const YAML::Node& calc) {
     }
     if (calc["restart"]) {
         params.restart_from_checkpoint = calc["restart"].as<bool>();
+    }
+
+    // -- hybrid functional parameters ----------------------------------------
+    if (calc["exx_fraction"]) {
+        params.exx_fraction = calc["exx_fraction"].as<double>();
+        if (params.exx_fraction < 0.0 || params.exx_fraction > 1.0) {
+            throw InputValidationError(
+                "calculation.exx_fraction: must be in [0, 1], got " +
+                std::to_string(params.exx_fraction));
+        }
+    }
+    if (calc["screening_parameter"]) {
+        params.screening_parameter = calc["screening_parameter"].as<double>();
+        if (params.screening_parameter < 0.0) {
+            throw InputValidationError(
+                "calculation.screening_parameter: must be >= 0, got " +
+                std::to_string(params.screening_parameter));
+        }
     }
 
     // -- vc-relax parameters -----------------------------------------------

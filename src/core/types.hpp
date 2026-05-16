@@ -54,6 +54,10 @@ struct CalculationParams {
     double press_target{0.0};  // Target pressure in GPa (0 = zero pressure)
     double cell_factor{2.0};   // Factor for cell optimization step size
 
+    // Hybrid functional parameters
+    double exx_fraction{0.25};            // Exact exchange fraction (α)
+    double screening_parameter{0.11};     // HSE06 screening ω (bohr⁻¹)
+
     // Checkpoint/restart parameters
     int checkpoint_every{0};                         // 0 = disabled
     std::string checkpoint_file{"kronos_checkpoint.bin"};  // checkpoint filename
