@@ -26,6 +26,9 @@ public:
     // Print summary to stdout
     void print_summary() const;
 
+    // Print summary with MPI min/max/avg reduction (rank 0 prints)
+    void print_summary_mpi() const;
+
     // Return as JSON-compatible structure
     std::map<std::string, double> as_map() const;
 

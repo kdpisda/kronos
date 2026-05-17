@@ -181,6 +181,50 @@ void bcast(int* buf, int count, int root) {
 }
 
 // =========================================================================
+// Allreduce (min/max/int)
+// =========================================================================
+
+void allreduce_min_inplace(double* buf, int count) {
+#ifdef KRONOS_HAS_MPI
+    MPI_Allreduce(MPI_IN_PLACE, buf, count, MPI_DOUBLE, MPI_MIN,
+                  MPI_COMM_WORLD);
+#else
+    (void)buf;
+    (void)count;
+#endif
+}
+
+void allreduce_max_inplace(double* buf, int count) {
+#ifdef KRONOS_HAS_MPI
+    MPI_Allreduce(MPI_IN_PLACE, buf, count, MPI_DOUBLE, MPI_MAX,
+                  MPI_COMM_WORLD);
+#else
+    (void)buf;
+    (void)count;
+#endif
+}
+
+void allreduce_sum(const int* sendbuf, int* recvbuf, int count) {
+#ifdef KRONOS_HAS_MPI
+    MPI_Allreduce(sendbuf, recvbuf, count, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+#else
+    if (sendbuf != recvbuf) {
+        std::memcpy(recvbuf, sendbuf, static_cast<size_t>(count) * sizeof(int));
+    }
+#endif
+}
+
+void allreduce_sum_inplace(int* buf, int count) {
+#ifdef KRONOS_HAS_MPI
+    MPI_Allreduce(MPI_IN_PLACE, buf, count, MPI_INT, MPI_SUM,
+                  MPI_COMM_WORLD);
+#else
+    (void)buf;
+    (void)count;
+#endif
+}
+
+// =========================================================================
 // Allgather
 // =========================================================================
 
@@ -206,6 +250,42 @@ void allgatherv(const double* sendbuf, int sendcount,
     (void)recvcounts;
     (void)displs;
     std::memcpy(recvbuf, sendbuf, static_cast<size_t>(sendcount) * sizeof(double));
+#endif
+}
+
+// =========================================================================
+// Node-local rank
+// =========================================================================
+
+int local_rank() {
+#ifdef KRONOS_HAS_MPI
+    int init = 0;
+    MPI_Initialized(&init);
+    if (!init) return 0;
+
+    MPI_Comm local_comm;
+    MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0,
+                        MPI_INFO_NULL, &local_comm);
+    int lr = 0;
+    MPI_Comm_rank(local_comm, &lr);
+    MPI_Comm_free(&local_comm);
+    return lr;
+#else
+    return 0;
+#endif
+}
+
+// =========================================================================
+// Broadcast (char overload)
+// =========================================================================
+
+void bcast(char* buf, int count, int root) {
+#ifdef KRONOS_HAS_MPI
+    MPI_Bcast(buf, count, MPI_CHAR, root, MPI_COMM_WORLD);
+#else
+    (void)buf;
+    (void)count;
+    (void)root;
 #endif
 }
 

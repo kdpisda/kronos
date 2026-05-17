@@ -9,6 +9,8 @@
 #include "potential/ewald.hpp"
 #include "potential/forces.hpp"
 #include "potential/stress.hpp"
+#include "potential/paw.hpp"
+#include "potential/exact_exchange.hpp"
 #include "io/checkpoint.hpp"
 #include "solver/davidson.hpp"
 #include "solver/mixing.hpp"
@@ -579,6 +581,73 @@ SCFResult SCFSolver::solve() {
     NonlocalPP nonlocal_pp(crystal_, basis, pseudopotentials_);
     Hamiltonian ham(crystal_, basis, fft_grid, nonlocal_pp);
 
+    // PAW calculator (active only when PAW PPs are present)
+    PAWCalculator paw_calc(crystal_, basis, fft_grid, pseudopotentials_);
+    bool use_paw = paw_calc.has_paw();
+    if (use_paw && is_root) {
+        std::printf("  PAW pseudopotentials detected\n");
+        // Auto-adjust ecutrho for PAW if not explicitly set
+        if (calc_params_.ecutrho <= 0 || calc_params_.ecutrho < 12.0 * calc_params_.ecutwfc) {
+            ecutrho = 12.0 * calc_params_.ecutwfc;
+            std::printf("  PAW: ecutrho auto-set to 12*ecutwfc = %.1f Ry\n", ecutrho);
+        }
+    }
+
+    // Save base D_ij for PAW reset/restore cycle
+    if (use_paw) {
+        nonlocal_pp.save_base_dij();
+    }
+
+    // Build PAW atom → NonlocalPP atom index mapping
+    std::vector<size_t> paw_atom_to_nlpp_idx;
+    if (use_paw) {
+        // PAWCalculator and NonlocalPP both iterate over crystal atoms in order,
+        // but only include atoms that have PAW/nonlocal PPs respectively.
+        // Build mapping by matching crystal atom indices.
+        for (size_t ia_paw = 0; ia_paw < paw_calc.rho_ij().size() || ia_paw == 0; ++ia_paw) {
+            // We'll rebuild this after we know the sizes
+            (void)ia_paw;
+        }
+        paw_atom_to_nlpp_idx.clear();
+        // Iterate PAW atoms and find matching NLPP atom by crystal index
+        // PAW atoms are indexed through the PAWCalculator internal order.
+        // For now, assume they're in the same crystal order (both iterate crystal_.atoms()).
+        // Build a map from crystal_atom_index -> nlpp_atom_index
+        std::map<int, size_t> crystal_to_nlpp;
+        for (size_t ia = 0; ia < nonlocal_pp.num_atoms(); ++ia) {
+            crystal_to_nlpp[nonlocal_pp.crystal_atom_index(ia)] = ia;
+        }
+        // PAW atoms correspond to crystal atoms with PAW PPs.
+        // We iterate in the same order PAWCalculator stores them.
+        for (size_t ia = 0; ia < crystal_.num_atoms(); ++ia) {
+            const auto& atom = crystal_.atom(ia);
+            auto pp_it = pseudopotentials_.find(atom.symbol);
+            if (pp_it == pseudopotentials_.end()) continue;
+            if (!pp_it->second.is_paw || !pp_it->second.paw.has_value()) continue;
+            auto nlpp_it = crystal_to_nlpp.find(static_cast<int>(ia));
+            if (nlpp_it != crystal_to_nlpp.end()) {
+                paw_atom_to_nlpp_idx.push_back(nlpp_it->second);
+            }
+        }
+    }
+
+    // Exact exchange for hybrid functionals
+    bool use_hybrid = xc.is_hybrid();
+    std::unique_ptr<ExactExchange> exx;
+    if (use_hybrid) {
+        exx = std::make_unique<ExactExchange>(
+            crystal_, basis, fft_grid,
+            xc.hybrid_type(),
+            calc_params_.exx_fraction,
+            calc_params_.screening_parameter);
+        // Scale semi-local exchange by (1 - α) for hybrid functionals
+        xc.set_exchange_scale(1.0 - calc_params_.exx_fraction);
+        if (is_root) {
+            std::printf("  Hybrid functional: %s (alpha=%.2f)\n",
+                        calc_params_.xc_functional.c_str(), calc_params_.exx_fraction);
+        }
+    }
+
     // 4. Set up solver components
     PulayMixer mixer(8, 0.2);
     DavidsonSolver eigensolver;
@@ -738,6 +807,33 @@ SCFResult SCFSolver::solve() {
     // to avoid losing spin polarization during early SCF steps.
     LinearMixer mixer_mag(0.2);
 
+    // Outer loop for hybrid functionals: re-update ACE vectors after inner SCF converges
+    const int outer_max = use_hybrid ? 8 : 1;
+    double outer_energy_prev = 0.0;
+
+    for (int outer = 0; outer < outer_max; ++outer) {
+    if (use_hybrid && outer > 0) {
+        // Collect occupied states from converged inner SCF and update ACE
+        // For v0.8, assert serial (MPI + hybrid not supported)
+        assert(mpi_size == 1 && "MPI + hybrid functionals not supported in v0.8");
+
+        std::vector<Vec3> ace_kpts(nk_local);
+        std::vector<double> ace_kwts(nk_local);
+        for (int iloc = 0; iloc < nk_local; ++iloc) {
+            int ik_global = my_kpoint_indices[iloc];
+            ace_kpts[iloc] = kpoints[ik_global];
+            ace_kwts[iloc] = kweights[ik_global];
+        }
+        exx->update_ace(converged_wavefunctions, converged_occupations,
+                        ace_kpts, ace_kwts);
+
+        // Reset mixer — potential landscape changed with new ACE vectors
+        mixer.reset();
+        if (is_root) {
+            std::printf("  Hybrid outer SCF step %d: ACE vectors updated\n", outer);
+        }
+    }
+
     for (int step = 1; step <= conv_params_.max_scf_steps; ++step) {
         KRONOS_TIMER("scf_step");
         auto step_start = std::chrono::high_resolution_clock::now();
@@ -765,6 +861,11 @@ SCFResult SCFSolver::solve() {
         // Gather to PW coefficients
         CVec density_g(num_pw);
         fft_grid.gather_from_grid(basis, density_g_full, density_g);
+
+        // PAW: add augmentation charge density to n(G) before Hartree/XC
+        if (use_paw && step > 1) {
+            paw_calc.add_augmentation_density(density_g_full, grid_gcart, grid_g2, ecutrho);
+        }
 
         // b. Compute Hartree potential on the full FFT grid.
         //    V_H(G) = 8π n(G) / G²  (Rydberg units).
@@ -871,6 +972,31 @@ SCFResult SCFSolver::solve() {
             }
         }
 
+        // PAW: compute D_ij corrections and update NonlocalPP
+        if (use_paw) {
+            // FFT spin-averaged V_eff to G-space for D_ij integral
+            std::vector<complex_t> veff_g_paw(num_grid);
+            if (nspin == 2) {
+                // Use spin-averaged V_eff for PAW D_ij
+                std::vector<complex_t> veff_avg(num_grid);
+                for (int i = 0; i < num_grid; ++i) {
+                    veff_avg[i] = 0.5 * (veff_up_r[i] + veff_dn_r[i]);
+                }
+                fft_grid.forward(veff_avg, veff_g_paw);
+            } else {
+                fft_grid.forward(veff_r, veff_g_paw);
+            }
+
+            auto dij_paw = paw_calc.compute_dij_paw(veff_g_paw, grid_gcart, grid_g2, ecutrho);
+
+            nonlocal_pp.reset_dij();
+            for (size_t ia_paw = 0; ia_paw < dij_paw.size(); ++ia_paw) {
+                if (ia_paw < paw_atom_to_nlpp_idx.size()) {
+                    nonlocal_pp.add_dij_correction(paw_atom_to_nlpp_idx[ia_paw], dij_paw[ia_paw]);
+                }
+            }
+        }
+
         // e. Solve eigenvalue problem at LOCAL k-points (per spin for nspin=2)
         //    Each MPI rank solves only its subset of k-points, then
         //    eigenvalues are gathered for the global Fermi level search.
@@ -902,7 +1028,51 @@ SCFResult SCFSolver::solve() {
                 auto h_apply = ham.get_apply_function(kpoints[ik_global]);
                 auto precond = ham.kinetic_diagonal(kpoints[ik_global]);
 
-                EigenResult eigen = eigensolver.solve(h_apply, precond, num_bands, num_pw);
+                // Prepare k-point for nonlocal projectors (needed for PAW S operator)
+                nonlocal_pp.prepare_kpoint(kpoints[ik_global]);
+
+                // Construct S operator lambda for PAW (generalized eigenvalue)
+                std::function<CVec(const CVec&)> s_apply_fn = nullptr;
+                if (use_paw) {
+                    s_apply_fn = [&](const CVec& psi) {
+                        auto proj = nonlocal_pp.compute_projections(psi);
+                        // Flatten beta projectors for PAW apply_s
+                        std::vector<CVec> flat_beta;
+                        for (size_t ia = 0; ia < nonlocal_pp.num_atoms(); ++ia) {
+                            for (const auto& b : nonlocal_pp.cached_beta()[ia]) {
+                                flat_beta.push_back(b);
+                            }
+                        }
+                        // Build per-atom projections in UPF basis for PAW
+                        // PAW works with UPF projector indices, not expanded
+                        std::vector<std::vector<complex_t>> proj_per_atom;
+                        for (size_t ia = 0; ia < nonlocal_pp.num_atoms(); ++ia) {
+                            // For PAW, we pass the expanded projections directly
+                            // since apply_s handles the q_ij in UPF space
+                            proj_per_atom.push_back(proj[ia]);
+                        }
+                        return paw_calc.apply_s(psi, flat_beta, proj_per_atom);
+                    };
+                }
+
+                // Wrap Hamiltonian with exact exchange when ACE is ready
+                std::function<CVec(const CVec&)> h_apply_full;
+                if (use_hybrid && exx->ace_ready()) {
+                    int ik_ace = ik_global;
+                    h_apply_full = [&h_apply, &exx, ik_ace](const CVec& psi) -> CVec {
+                        CVec hpsi = h_apply(psi);
+                        CVec vx = exx->apply_ace(psi, ik_ace);
+                        for (size_t ig = 0; ig < hpsi.size(); ++ig) {
+                            hpsi[ig] += vx[ig];
+                        }
+                        return hpsi;
+                    };
+                } else {
+                    h_apply_full = h_apply;
+                }
+
+                EigenResult eigen = eigensolver.solve(h_apply_full, precond, num_bands, num_pw,
+                                                      {}, s_apply_fn);
 
                 if (nspin == 1) {
                     local_eigenvalues.push_back(eigen.eigenvalues);
@@ -1033,6 +1203,61 @@ SCFResult SCFSolver::solve() {
             }
         }
 
+        // PAW: collect projections and compute ρ_ij after occupations are known
+        if (use_paw) {
+            // Build local kweights for PAW
+            std::vector<double> paw_kweights(nk_local);
+            for (int iloc = 0; iloc < nk_local; ++iloc) {
+                paw_kweights[iloc] = kweights[my_kpoint_indices[iloc]];
+            }
+
+            // Build projections: per-k-point, per-band, per-atom (UPF indices)
+            std::vector<std::vector<std::vector<complex_t>>> projections_paw;
+
+            for (int iloc = 0; iloc < nk_local; ++iloc) {
+                int ik_global = my_kpoint_indices[iloc];
+                nonlocal_pp.prepare_kpoint(kpoints[ik_global]);
+
+                std::vector<std::vector<complex_t>> band_projs;
+                for (int ib = 0; ib < num_bands; ++ib) {
+                    const auto& wfc = (nspin == 1)
+                        ? local_wavefunctions[iloc][ib]
+                        : local_wavefunctions_spin[0][iloc][ib];
+
+                    auto expanded_proj = nonlocal_pp.compute_projections(wfc);
+
+                    // Collapse expanded projections to UPF indices for each PAW atom.
+                    // PAW compute_rho_ij expects proj[ip] where ip is UPF projector index.
+                    // For each UPF projector, take the m=0 expanded projection.
+                    std::vector<complex_t> flat_upf_proj;
+                    for (size_t ia_paw = 0; ia_paw < paw_atom_to_nlpp_idx.size(); ++ia_paw) {
+                        size_t ia_nlpp = paw_atom_to_nlpp_idx[ia_paw];
+                        int nproj_upf = nonlocal_pp.num_upf_projectors(ia_nlpp);
+                        const auto& emap = nonlocal_pp.expanded_map(ia_nlpp);
+                        const auto& atom_proj = expanded_proj[ia_nlpp];
+
+                        for (int ip_upf = 0; ip_upf < nproj_upf; ++ip_upf) {
+                            complex_t proj_val{0.0, 0.0};
+                            for (size_t ie = 0; ie < emap.size(); ++ie) {
+                                if (emap[ie].upf_beta_index == ip_upf && emap[ie].m == 0) {
+                                    proj_val = atom_proj[ie];
+                                    break;
+                                }
+                            }
+                            flat_upf_proj.push_back(proj_val);
+                        }
+                    }
+                    band_projs.push_back(std::move(flat_upf_proj));
+                }
+                projections_paw.push_back(std::move(band_projs));
+            }
+
+            // Compute ρ_ij using occupations
+            const auto& occs_for_paw = (nspin == 1)
+                ? local_occupations : local_occupations_spin[0];
+            paw_calc.compute_rho_ij(projections_paw, occs_for_paw, paw_kweights, spin_factor);
+        }
+
         auto accumulate_density = [&](const std::vector<std::vector<CVec>>& wfcs,
                                        const std::vector<std::vector<double>>& occs,
                                        RVec& dens_out) {
@@ -1141,6 +1366,32 @@ SCFResult SCFSolver::solve() {
 
         double total_e = e_band - e_hartree + e_xc - vxc_integral;
 
+        // PAW one-center energy correction
+        double e_paw = 0.0;
+        if (use_paw) {
+            e_paw = paw_calc.one_center_energy();
+            total_e += e_paw;
+        }
+
+        // Exact exchange energy for hybrid functionals
+        double e_exx = 0.0;
+        if (use_hybrid && exx->ace_ready()) {
+            // For serial (mpi_size==1), local == global.
+            // MPI + hybrid not supported in v0.8.
+            std::vector<Vec3> exx_kpts(nk_local);
+            std::vector<double> exx_kwts(nk_local);
+            for (int iloc = 0; iloc < nk_local; ++iloc) {
+                int ik_global = my_kpoint_indices[iloc];
+                exx_kpts[iloc] = kpoints[ik_global];
+                exx_kwts[iloc] = kweights[ik_global];
+            }
+            e_exx = exx->exchange_energy(
+                (nspin == 1) ? local_wavefunctions : local_wavefunctions_spin[0],
+                (nspin == 1) ? local_occupations : local_occupations_spin[0],
+                exx_kpts, exx_kwts);
+            total_e += e_exx;
+        }
+
         // Smearing entropy correction (Gaussian: -T*S = -0.5*sigma/sqrt(pi) * sum exp(-x^2))
         // QE uses w0gauss(x) = -0.5*exp(-x^2)/sqrt(pi) per state.
         double e_smearing = 0.0;
@@ -1235,6 +1486,8 @@ SCFResult SCFSolver::solve() {
         result.local_pp_energy = e_local;
         result.nonlocal_pp_energy = e_nonlocal;
         result.smearing_energy = e_smearing;
+        result.paw_energy = e_paw;
+        result.exx_energy = e_exx;
         result.fermi_energy_ev = fermi.fermi_energy * constants::rydberg_to_ev;
 
         // Set eigenvalues
@@ -1468,6 +1721,19 @@ SCFResult SCFSolver::solve() {
         }
     }
 
+    // Outer loop convergence check for hybrid functionals
+    if (use_hybrid) {
+        double de = std::abs(result.total_energy_ry - outer_energy_prev);
+        if (outer > 0 && de < conv_params_.energy_threshold * 10.0) {
+            if (is_root) {
+                std::printf("  Hybrid outer SCF converged: dE = %.2e Ry\n", de);
+            }
+            break;
+        }
+        outer_energy_prev = result.total_energy_ry;
+    }
+    } // end outer loop
+
     // ----------------------------------------------------------------
     // 7. Post-SCF: Ewald energy and Hellmann-Feynman forces
     // ----------------------------------------------------------------
@@ -1534,9 +1800,27 @@ SCFResult SCFSolver::solve() {
             }
         }
 
-        // Total forces: Ewald + local + nonlocal
+        // PAW augmentation force correction
+        if (use_paw) {
+            // Build V_eff in G-space for PAW force computation
+            std::vector<complex_t> veff_g_paw(num_grid);
+            fft_grid.forward(converged_veff_r, veff_g_paw);
+            result.paw_forces = paw_calc.compute_paw_forces(
+                veff_g_paw, grid_gcart, grid_g2, ecutrho);
+        }
+
+        // Total forces: Ewald + local + nonlocal (+ PAW if present)
         result.forces = ForceCalculator::compute_total_forces(
             result.ewald_forces, result.local_forces, result.nonlocal_forces);
+
+        // Add PAW force contribution
+        if (use_paw && !result.paw_forces.empty()) {
+            for (size_t ia = 0; ia < crystal_.num_atoms(); ++ia) {
+                for (int d = 0; d < 3; ++d) {
+                    result.forces[ia][d] += result.paw_forces[ia][d];
+                }
+            }
+        }
 
 #ifdef KRONOS_HAS_SPGLIB
         // Symmetrize forces using crystal point group operations.
@@ -1610,6 +1894,19 @@ SCFResult SCFSolver::solve() {
         result.stress = StressCalculator::compute_total_stress(
             result.stress_kinetic, result.stress_hartree, result.stress_xc,
             result.stress_local, result.stress_nonlocal, result.stress_ewald);
+
+        // Add PAW stress correction
+        if (use_paw) {
+            std::vector<complex_t> veff_g_stress(num_grid);
+            fft_grid.forward(converged_veff_r, veff_g_stress);
+            Mat3 paw_stress = paw_calc.compute_paw_stress(
+                veff_g_stress, grid_gcart, grid_g2, ecutrho);
+            for (int a = 0; a < 3; ++a) {
+                for (int b = 0; b < 3; ++b) {
+                    result.stress[a][b] += paw_stress[a][b];
+                }
+            }
+        }
 
         result.pressure_gpa = StressCalculator::pressure_gpa(result.stress);
 

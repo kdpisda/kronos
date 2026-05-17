@@ -68,4 +68,12 @@ bool checkpoint_exists(const std::string& filename);
 /// to detect accidental mismatches between checkpoint and input.
 std::string compute_input_hash(const std::string& yaml_content);
 
+/// MPI-aware checkpoint write: only rank 0 writes.
+/// All ranks call this; non-root ranks are no-ops.
+void write_checkpoint_mpi(const std::string& filename, const CheckpointData& data);
+
+/// MPI-aware checkpoint read: rank 0 reads, broadcasts to all ranks.
+/// All ranks must call this together.
+CheckpointData read_checkpoint_mpi(const std::string& filename);
+
 } // namespace kronos::checkpoint

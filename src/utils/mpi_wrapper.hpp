@@ -81,6 +81,22 @@ inline void broadcast(int* buf, int count, int root = 0) {
 }
 
 // -------------------------------------------------------------------------
+// Allreduce (min/max) — for diagnostics and error checking
+// -------------------------------------------------------------------------
+
+/// In-place allreduce-min for doubles.
+void allreduce_min_inplace(double* buf, int count);
+
+/// In-place allreduce-max for doubles.
+void allreduce_max_inplace(double* buf, int count);
+
+/// Out-of-place allreduce-sum for ints (used for global error checking).
+void allreduce_sum(const int* sendbuf, int* recvbuf, int count);
+
+/// In-place allreduce-sum for ints.
+void allreduce_sum_inplace(int* buf, int count);
+
+// -------------------------------------------------------------------------
 // Allgather
 // -------------------------------------------------------------------------
 
@@ -94,5 +110,20 @@ void allgather(const double* sendbuf, int sendcount,
 /// `displs[i]` is the offset in recvbuf for rank i.
 void allgatherv(const double* sendbuf, int sendcount,
                 double* recvbuf, const int* recvcounts, const int* displs);
+
+// -------------------------------------------------------------------------
+// Node-local rank (for GPU assignment)
+// -------------------------------------------------------------------------
+
+/// Return node-local rank via MPI_Comm_split_type(SHARED).
+/// In serial builds, returns 0.
+int local_rank();
+
+// -------------------------------------------------------------------------
+// Broadcast (additional overloads)
+// -------------------------------------------------------------------------
+
+/// Broadcast chars from root to all ranks (for checkpoint data).
+void bcast(char* buf, int count, int root = 0);
 
 } // namespace kronos::mpi

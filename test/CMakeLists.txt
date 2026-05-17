@@ -61,3 +61,23 @@ kronos_add_test(test_mpi)
 kronos_add_test(test_gpu)
 kronos_add_test(test_paw)
 kronos_add_test(test_hybrid)
+
+# ============================================================================
+# MPI multi-rank tests (only when MPI is available)
+# ============================================================================
+if(MPI_FOUND)
+    # Build the MPI multi-rank test executable (uses custom main with MPI init)
+    add_executable(test_mpi_multi test_mpi_multi.cpp)
+    target_link_libraries(test_mpi_multi PRIVATE kronos_lib GTest::gtest)
+
+    # Register tests to run with mpirun
+    add_test(NAME MPIMulti_np2
+        COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 2
+                $<TARGET_FILE:test_mpi_multi>)
+    set_tests_properties(MPIMulti_np2 PROPERTIES TIMEOUT 300)
+
+    add_test(NAME MPIMulti_np4
+        COMMAND ${MPIEXEC_EXECUTABLE} ${MPIEXEC_NUMPROC_FLAG} 4
+                $<TARGET_FILE:test_mpi_multi>)
+    set_tests_properties(MPIMulti_np4 PROPERTIES TIMEOUT 300)
+endif()

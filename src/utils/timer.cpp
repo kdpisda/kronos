@@ -1,4 +1,5 @@
 #include "utils/timer.hpp"
+#include "utils/mpi_wrapper.hpp"
 #include <iostream>
 #include <iomanip>
 #include <algorithm>
@@ -75,6 +76,61 @@ void TimerRegistry::print_summary() const {
                   << std::setw(10) << e->call_count
                   << std::setw(14) << avg
                   << "\n";
+    }
+}
+
+void TimerRegistry::print_summary_mpi() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    if (entries_.empty()) {
+        if (mpi::rank() == 0) {
+            std::cout << "  (no timings recorded)\n";
+        }
+        return;
+    }
+
+    // Collect entries sorted by total time descending (local)
+    std::vector<const TimingEntry*> sorted;
+    sorted.reserve(entries_.size());
+    for (const auto& [key, entry] : entries_) {
+        sorted.push_back(&entry);
+    }
+    std::sort(sorted.begin(), sorted.end(),
+              [](const TimingEntry* a, const TimingEntry* b) {
+                  return a->total_seconds > b->total_seconds;
+              });
+
+    // MPI reduce min/max/avg for each timer
+    int nprocs = mpi::size();
+    for (const auto* e : sorted) {
+        double t_min = e->total_seconds;
+        double t_max = e->total_seconds;
+        double t_sum = e->total_seconds;
+
+        mpi::allreduce_min_inplace(&t_min, 1);
+        mpi::allreduce_max_inplace(&t_max, 1);
+        mpi::allreduce_sum_inplace(&t_sum, 1);
+
+        if (mpi::rank() == 0) {
+            if (e == sorted.front()) {
+                // Print header only once
+                std::cout << std::left << std::setw(24) << "Timer"
+                          << std::right << std::setw(12) << "Min (s)"
+                          << std::setw(12) << "Max (s)"
+                          << std::setw(12) << "Avg (s)"
+                          << std::setw(8) << "Calls"
+                          << "\n";
+                std::cout << std::string(68, '-') << "\n";
+            }
+            double avg = t_sum / nprocs;
+            std::cout << std::left << std::setw(24) << e->name
+                      << std::right << std::fixed << std::setprecision(4)
+                      << std::setw(12) << t_min
+                      << std::setw(12) << t_max
+                      << std::setw(12) << avg
+                      << std::setw(8) << e->call_count
+                      << "\n";
+        }
     }
 }
 

@@ -31,6 +31,9 @@ int main(int argc, char* argv[]) {
     const int my_rank = mpi::rank();
     const int num_procs = mpi::size();
 
+    // Set MPI rank for structured logging
+    Logger::instance().set_mpi_rank(my_rank);
+
     // 1. Parse command line (just input file path for v0.1)
     if (argc < 2) {
         if (my_rank == 0) {
@@ -78,6 +81,15 @@ int main(int argc, char* argv[]) {
             std::cout << "XC: " << input.calculation.xc_functional << std::endl;
         }
 
+        // Helper: print timing summary (MPI-aware)
+        auto print_timing = [&]() {
+            if (num_procs > 1) {
+                TimerRegistry::instance().print_summary_mpi();
+            } else if (my_rank == 0) {
+                TimerRegistry::instance().print_summary();
+            }
+        };
+
         // 6. Run calculation
         if (input.calculation.type == CalculationType::Relax) {
             // Geometry optimization via BFGS
@@ -94,9 +106,8 @@ int main(int argc, char* argv[]) {
                 OutputWriter::write_json(output_file, relax_result.final_scf,
                                          relax_result.final_crystal, "relax");
                 std::cout << "\nOutput written to " << output_file << std::endl;
-
-                TimerRegistry::instance().print_summary();
             }
+            print_timing();
             exit_code = relax_result.converged ? 0 : 1;
 
         } else if (input.calculation.type == CalculationType::VCRelax) {
@@ -200,7 +211,7 @@ int main(int argc, char* argv[]) {
                 BandStructureCalculator::write_bands_gnuplot("kronos.bands.dat", kpath);
                 std::cout << "Band structure written to kronos.bands.dat" << std::endl;
 
-                TimerRegistry::instance().print_summary();
+                print_timing();
             }
             exit_code = scf_result.converged ? 0 : 1;
 
@@ -257,7 +268,7 @@ int main(int argc, char* argv[]) {
                 DOSCalculator::write_dos("kronos.dos.dat", dos_data);
                 std::cout << "DOS written to kronos.dos.dat" << std::endl;
 
-                TimerRegistry::instance().print_summary();
+                print_timing();
             }
             exit_code = scf_result.converged ? 0 : 1;
 
@@ -271,10 +282,10 @@ int main(int argc, char* argv[]) {
                 std::string output_file = "kronos.out.json";
                 OutputWriter::write_json(output_file, result, crystal, "scf");
                 std::cout << "\nOutput written to " << output_file << std::endl;
-
-                // 8. Print timing summary
-                TimerRegistry::instance().print_summary();
             }
+
+            // 8. Print timing summary (MPI-aware)
+            print_timing();
 
             exit_code = result.converged ? 0 : 1;
         }

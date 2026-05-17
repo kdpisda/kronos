@@ -16,6 +16,7 @@
 
 #include "io/checkpoint.hpp"
 #include "utils/logger.hpp"
+#include "utils/mpi_wrapper.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -583,6 +584,113 @@ CheckpointData read_checkpoint(const std::string& filename) {
          {"input_hash", data.input_hash},
          {"density_size", std::to_string(data.density_g.size())},
          {"num_kpoints", std::to_string(data.wavefunctions.size())}});
+
+    return data;
+}
+
+// =========================================================================
+// MPI-aware checkpoint routines
+// =========================================================================
+
+void write_checkpoint_mpi(const std::string& filename,
+                          const CheckpointData& data) {
+    // Only rank 0 writes
+    if (mpi::rank() == 0) {
+        write_checkpoint(filename, data);
+    }
+    mpi::barrier();
+}
+
+CheckpointData read_checkpoint_mpi(const std::string& filename) {
+    CheckpointData data;
+
+    if (mpi::rank() == 0) {
+        data = read_checkpoint(filename);
+    }
+
+    // Broadcast all fields from rank 0 to all ranks
+    // 1. scf_step
+    mpi::bcast(&data.scf_step, 1, 0);
+
+    // 2. input_hash (fixed 16-char string)
+    {
+        int hash_len = static_cast<int>(data.input_hash.size());
+        mpi::bcast(&hash_len, 1, 0);
+        data.input_hash.resize(static_cast<size_t>(hash_len));
+        if (hash_len > 0) {
+            mpi::bcast(data.input_hash.data(), hash_len, 0);
+        }
+    }
+
+    // 3. density_g
+    {
+        int n = static_cast<int>(data.density_g.size());
+        mpi::bcast(&n, 1, 0);
+        data.density_g.resize(static_cast<size_t>(n));
+        if (n > 0) {
+            mpi::bcast(data.density_g.data(), n, 0);
+        }
+    }
+
+    // 4. wavefunctions (vector of vectors)
+    {
+        int nk = static_cast<int>(data.wavefunctions.size());
+        mpi::bcast(&nk, 1, 0);
+        data.wavefunctions.resize(static_cast<size_t>(nk));
+        for (int ik = 0; ik < nk; ++ik) {
+            int npw = static_cast<int>(data.wavefunctions[ik].size());
+            mpi::bcast(&npw, 1, 0);
+            data.wavefunctions[ik].resize(static_cast<size_t>(npw));
+            if (npw > 0) {
+                mpi::bcast(data.wavefunctions[ik].data(), npw, 0);
+            }
+        }
+    }
+
+    // 5. eigenvalues
+    {
+        int nk = static_cast<int>(data.eigenvalues.size());
+        mpi::bcast(&nk, 1, 0);
+        data.eigenvalues.resize(static_cast<size_t>(nk));
+        for (int ik = 0; ik < nk; ++ik) {
+            int nb = static_cast<int>(data.eigenvalues[ik].size());
+            mpi::bcast(&nb, 1, 0);
+            data.eigenvalues[ik].resize(static_cast<size_t>(nb));
+            if (nb > 0) {
+                mpi::bcast(data.eigenvalues[ik].data(), nb, 0);
+            }
+        }
+    }
+
+    // 6. occupations
+    {
+        int nk = static_cast<int>(data.occupations.size());
+        mpi::bcast(&nk, 1, 0);
+        data.occupations.resize(static_cast<size_t>(nk));
+        for (int ik = 0; ik < nk; ++ik) {
+            int nb = static_cast<int>(data.occupations[ik].size());
+            mpi::bcast(&nb, 1, 0);
+            data.occupations[ik].resize(static_cast<size_t>(nb));
+            if (nb > 0) {
+                mpi::bcast(data.occupations[ik].data(), nb, 0);
+            }
+        }
+    }
+
+    // 7. diis_density_history
+    {
+        int nh = static_cast<int>(data.diis_density_history.size());
+        mpi::bcast(&nh, 1, 0);
+        data.diis_density_history.resize(static_cast<size_t>(nh));
+        for (int ih = 0; ih < nh; ++ih) {
+            int nd = static_cast<int>(data.diis_density_history[ih].size());
+            mpi::bcast(&nd, 1, 0);
+            data.diis_density_history[ih].resize(static_cast<size_t>(nd));
+            if (nd > 0) {
+                mpi::bcast(data.diis_density_history[ih].data(), nd, 0);
+            }
+        }
+    }
 
     return data;
 }

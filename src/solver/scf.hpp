@@ -30,6 +30,8 @@ struct SCFResult {
     double nonlocal_pp_energy{0.0};
     double ewald_energy{0.0};      // ion-ion Ewald energy
     double smearing_energy{0.0};   // -TS entropy correction
+    double paw_energy{0.0};        // PAW one-center correction
+    double exx_energy{0.0};        // exact exchange energy (hybrids)
 
     // Per-atom forces (Ry/bohr) — total Hellmann-Feynman forces
     std::vector<Vec3> forces;
@@ -38,6 +40,7 @@ struct SCFResult {
     std::vector<Vec3> ewald_forces;
     std::vector<Vec3> local_forces;
     std::vector<Vec3> nonlocal_forces;
+    std::vector<Vec3> paw_forces;
 
     // Stress tensor (Ry/bohr^3) — 3x3 symmetric tensor
     Mat3 stress{};
