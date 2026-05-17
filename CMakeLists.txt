@@ -20,8 +20,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Build options
 # ============================================================================
 set(KRONOS_GPU_BACKEND "none" CACHE STRING
-    "GPU acceleration backend: none | cuda | hip")
-set_property(CACHE KRONOS_GPU_BACKEND PROPERTY STRINGS none cuda hip)
+    "GPU acceleration backend: none | cuda | hip | metal")
+set_property(CACHE KRONOS_GPU_BACKEND PROPERTY STRINGS none cuda hip metal)
 
 option(KRONOS_BUILD_TESTS  "Build the GoogleTest test suite" ON)
 option(KRONOS_BUILD_PYTHON "Build pybind11 Python bindings"  OFF)
@@ -41,6 +41,23 @@ if(KRONOS_GPU_BACKEND_LOWER STREQUAL "cuda")
     enable_language(CUDA)
     set(CMAKE_CUDA_STANDARD 17)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "metal")
+    if(NOT APPLE)
+        message(FATAL_ERROR
+            "KRONOS_GPU_BACKEND=metal requires macOS; current platform is "
+            "${CMAKE_SYSTEM_NAME}")
+    endif()
+    if(NOT CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64")
+        message(FATAL_ERROR
+            "KRONOS_GPU_BACKEND=metal requires Apple Silicon (arm64); "
+            "current architecture is ${CMAKE_SYSTEM_PROCESSOR}")
+    endif()
+    if(NOT CMAKE_SYSTEM_VERSION VERSION_GREATER_EQUAL "22.0.0")
+        message(WARNING
+            "KRONOS_GPU_BACKEND=metal is tested on macOS 13+; current "
+            "kernel version ${CMAKE_SYSTEM_VERSION} may have limited "
+            "double-precision Metal Shading Language support.")
+    endif()
 endif()
 
 # ============================================================================
