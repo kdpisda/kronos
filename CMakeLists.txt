@@ -93,7 +93,13 @@ elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "hip")
     message(STATUS "KRONOS: HIP backend enabled")
 
 elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "metal")
-    # metal-cpp: Apple's official C++17 headers for Metal (header-only)
+    # metal-cpp: Apple's official C++17 headers for Metal (header-only).
+    #
+    # NOTE on URL stability: Apple rotates metal-cpp filenames with each SDK
+    # release and does NOT maintain permanent links. If the URL below 404s,
+    # visit https://developer.apple.com/metal/cpp/ and pick the closest
+    # successor, then recompute SHA-256 with:
+    #     shasum -a 256 metal-cpp_macOSXX.Y_iOSAA.B.zip
     include(FetchContent)
     FetchContent_Declare(
         metal_cpp
@@ -103,8 +109,12 @@ elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "metal")
     FetchContent_MakeAvailable(metal_cpp)
     # The macOS15+ archive extracts flat (Metal/ Foundation/ QuartzCore/ directly
     # under the source root), so Metal/Metal.hpp is at ${metal_cpp_SOURCE_DIR}/Metal/Metal.hpp.
-    add_library(metal_cpp INTERFACE)
-    target_include_directories(metal_cpp INTERFACE "${metal_cpp_SOURCE_DIR}")
+    #
+    # The INTERFACE-library target is named kronos_metal_cpp to avoid colliding
+    # with the FetchContent population name (metal_cpp) — downstream callers
+    # `target_link_libraries(... kronos_metal_cpp)`.
+    add_library(kronos_metal_cpp INTERFACE)
+    target_include_directories(kronos_metal_cpp INTERFACE "${metal_cpp_SOURCE_DIR}")
     message(STATUS "KRONOS: Metal backend enabled (metal-cpp at ${metal_cpp_SOURCE_DIR})")
 endif()
 

@@ -95,8 +95,11 @@ elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "metal")
         URL_HASH SHA256=2c637afac98e6a86d9f9b3284755d75d6c5ad6b30b3c5e51b14e5a0f49f33c8e
     )
     FetchContent_MakeAvailable(metal_cpp)
-    add_library(metal_cpp INTERFACE)
-    target_include_directories(metal_cpp INTERFACE ${metal_cpp_SOURCE_DIR})
+    # INTERFACE target is named kronos_metal_cpp to avoid colliding with
+    # the FetchContent population name (metal_cpp). Downstream callers
+    # use target_link_libraries(... kronos_metal_cpp).
+    add_library(kronos_metal_cpp INTERFACE)
+    target_include_directories(kronos_metal_cpp INTERFACE ${metal_cpp_SOURCE_DIR})
     message(STATUS "KRONOS: Metal backend enabled (metal-cpp at ${metal_cpp_SOURCE_DIR})")
 endif()
 ```
@@ -481,7 +484,7 @@ elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "metal")
     target_sources(kronos_lib PRIVATE ${KRONOS_METAL_SOURCES})
     target_compile_definitions(kronos_lib PUBLIC KRONOS_GPU_METAL)
     target_link_libraries(kronos_lib PUBLIC
-        metal_cpp
+        kronos_metal_cpp
         vkfft
         "-framework Metal"
         "-framework Foundation"
