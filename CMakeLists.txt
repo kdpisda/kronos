@@ -52,10 +52,12 @@ elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "metal")
             "KRONOS_GPU_BACKEND=metal requires Apple Silicon (arm64); "
             "current architecture is ${CMAKE_SYSTEM_PROCESSOR}")
     endif()
+    # Darwin kernel 22.x == macOS 13 (Ventura) — first version with reliable
+    # fp64 in Metal Shading Language. CMAKE_SYSTEM_VERSION reports Darwin.
     if(NOT CMAKE_SYSTEM_VERSION VERSION_GREATER_EQUAL "22.0.0")
         message(WARNING
-            "KRONOS_GPU_BACKEND=metal is tested on macOS 13+; current "
-            "kernel version ${CMAKE_SYSTEM_VERSION} may have limited "
+            "KRONOS_GPU_BACKEND=metal is tested on macOS 13+ (Darwin 22+); "
+            "current Darwin version ${CMAKE_SYSTEM_VERSION} may have limited "
             "double-precision Metal Shading Language support.")
     endif()
 endif()
