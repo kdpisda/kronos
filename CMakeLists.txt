@@ -91,6 +91,21 @@ elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "hip")
     find_package(rocfft   REQUIRED CONFIG)
     find_package(rocblas  REQUIRED CONFIG)
     message(STATUS "KRONOS: HIP backend enabled")
+
+elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "metal")
+    # metal-cpp: Apple's official C++17 headers for Metal (header-only)
+    include(FetchContent)
+    FetchContent_Declare(
+        metal_cpp
+        URL      https://developer.apple.com/metal/cpp/files/metal-cpp_macOS15.2_iOS18.2.zip
+        URL_HASH SHA256=3437e4abfbd3d45217f34772ef3502f31ba3358e5fb6ac9d0ca952a047bcfe25
+    )
+    FetchContent_MakeAvailable(metal_cpp)
+    # The macOS15+ archive extracts flat (Metal/ Foundation/ QuartzCore/ directly
+    # under the source root), so Metal/Metal.hpp is at ${metal_cpp_SOURCE_DIR}/Metal/Metal.hpp.
+    add_library(metal_cpp INTERFACE)
+    target_include_directories(metal_cpp INTERFACE "${metal_cpp_SOURCE_DIR}")
+    message(STATUS "KRONOS: Metal backend enabled (metal-cpp at ${metal_cpp_SOURCE_DIR})")
 endif()
 
 # ============================================================================
