@@ -132,7 +132,7 @@ elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "metal")
     # INTERFACE target is named kronos_vkfft to avoid colliding with the
     # FetchContent population name (vkfft) — downstream callers use kronos_vkfft.
     add_library(kronos_vkfft INTERFACE)
-    target_include_directories(kronos_vkfft INTERFACE ${vkfft_SOURCE_DIR}/vkFFT)
+    target_include_directories(kronos_vkfft INTERFACE "${vkfft_SOURCE_DIR}/vkFFT")
     target_compile_definitions(kronos_vkfft INTERFACE VKFFT_BACKEND=5)  # 5 = Metal
     message(STATUS "KRONOS: VkFFT fetched at ${vkfft_SOURCE_DIR}")
 endif()

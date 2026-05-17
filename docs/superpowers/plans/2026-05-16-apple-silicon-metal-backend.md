@@ -151,10 +151,12 @@ Inside the `metal` branch in `CMakeLists.txt` (the `elseif` from Task 2), before
     if(NOT vkfft_POPULATED)
         FetchContent_Populate(vkfft)
     endif()
-    add_library(vkfft INTERFACE)
-    target_include_directories(vkfft INTERFACE
-        ${vkfft_SOURCE_DIR}/vkFFT)
-    target_compile_definitions(vkfft INTERFACE
+    # INTERFACE target is named kronos_vkfft to avoid colliding with the
+    # FetchContent population name (vkfft). Downstream callers use kronos_vkfft.
+    add_library(kronos_vkfft INTERFACE)
+    target_include_directories(kronos_vkfft INTERFACE
+        "${vkfft_SOURCE_DIR}/vkFFT")
+    target_compile_definitions(kronos_vkfft INTERFACE
         VKFFT_BACKEND=5)   # 5 = Metal backend
     message(STATUS "KRONOS: VkFFT fetched at ${vkfft_SOURCE_DIR}")
 ```
