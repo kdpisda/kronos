@@ -8,6 +8,22 @@
 #       SOURCES  file1.metal file2.metal ...
 #       SDK      macosx                   # or iphoneos
 #   )
+#
+# ----------------------------------------------------------------------------
+# PREREQUISITE — full Xcode.app, not just Command Line Tools
+# ----------------------------------------------------------------------------
+# `xcrun metal` (the Metal Shading Language compiler) ships ONLY with the full
+# Xcode app from the App Store (~16 GB). It is NOT included in Xcode Command
+# Line Tools. If this build fails with:
+#     xcrun: error: unable to find utility "metal", not a developer tool or in PATH
+# install Xcode.app, then run:
+#     sudo xcode-select --switch /Applications/Xcode.app
+#
+# The KRONOS Metal backend work was paused at Task 5 (skeleton) on 2026-05-17
+# specifically because of this dependency. To resume:
+#   - docs/superpowers/specs/2026-05-16-apple-silicon-metal-backend-design.md
+#   - docs/superpowers/plans/2026-05-16-apple-silicon-metal-backend.md
+# Pick up from Task 6 onward once Xcode.app is available.
 # ============================================================================
 
 function(kronos_build_metallib)
