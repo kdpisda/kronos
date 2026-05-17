@@ -91,6 +91,32 @@ elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "hip")
             roc::rocblas
     )
 
+elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "metal")
+    set(KRONOS_METAL_SOURCES
+        ${CMAKE_CURRENT_SOURCE_DIR}/gpu/gpu_context_metal.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/gpu/memory_metal.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/gpu/blas_metal.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/gpu/fft_metal.cpp
+    )
+    target_sources(kronos_lib PRIVATE ${KRONOS_METAL_SOURCES})
+    target_compile_definitions(kronos_lib PUBLIC KRONOS_GPU_METAL)
+    target_link_libraries(kronos_lib PUBLIC
+        kronos_metal_cpp
+        kronos_vkfft
+        "-framework Metal"
+        "-framework Foundation"
+        "-framework QuartzCore"
+    )
+
+    # Compile .metal shaders into kronos.metallib (placed at the build root)
+    kronos_build_metallib(
+        TARGET  kronos_metallib
+        OUTPUT  ${CMAKE_BINARY_DIR}/kronos.metallib
+        SDK     macosx
+        SOURCES gpu/kernels/complex_gemm.metal
+    )
+    add_dependencies(kronos_lib kronos_metallib)
+
 else()
     # CPU-only build: compile GPU stubs so callers get clean runtime errors
     target_sources(kronos_lib PRIVATE
