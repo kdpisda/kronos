@@ -485,7 +485,7 @@ elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "metal")
     target_compile_definitions(kronos_lib PUBLIC KRONOS_GPU_METAL)
     target_link_libraries(kronos_lib PUBLIC
         kronos_metal_cpp
-        vkfft
+        kronos_vkfft
         "-framework Metal"
         "-framework Foundation"
         "-framework QuartzCore"

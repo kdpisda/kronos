@@ -116,6 +116,25 @@ elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "metal")
     add_library(kronos_metal_cpp INTERFACE)
     target_include_directories(kronos_metal_cpp INTERFACE "${metal_cpp_SOURCE_DIR}")
     message(STATUS "KRONOS: Metal backend enabled (metal-cpp at ${metal_cpp_SOURCE_DIR})")
+
+    # VkFFT: portable GPU FFT (uses Metal via metal-cpp under the hood).
+    # Pinned to v1.3.4 — newer versions may change the Metal-backend API.
+    FetchContent_Declare(
+        vkfft
+        GIT_REPOSITORY https://github.com/DTolm/VkFFT.git
+        GIT_TAG        v1.3.4
+        GIT_SHALLOW    TRUE
+    )
+    FetchContent_GetProperties(vkfft)
+    if(NOT vkfft_POPULATED)
+        FetchContent_Populate(vkfft)
+    endif()
+    # INTERFACE target is named kronos_vkfft to avoid colliding with the
+    # FetchContent population name (vkfft) — downstream callers use kronos_vkfft.
+    add_library(kronos_vkfft INTERFACE)
+    target_include_directories(kronos_vkfft INTERFACE ${vkfft_SOURCE_DIR}/vkFFT)
+    target_compile_definitions(kronos_vkfft INTERFACE VKFFT_BACKEND=5)  # 5 = Metal
+    message(STATUS "KRONOS: VkFFT fetched at ${vkfft_SOURCE_DIR}")
 endif()
 
 # ============================================================================
