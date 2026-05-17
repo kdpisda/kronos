@@ -33,6 +33,7 @@ string(TOLOWER "${KRONOS_GPU_BACKEND}" KRONOS_GPU_BACKEND_LOWER)
 # Custom find-module path
 # ============================================================================
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+include(MetalShaders OPTIONAL)
 
 # ============================================================================
 # GPU language enablement (must come before find_package for GPU libs)
