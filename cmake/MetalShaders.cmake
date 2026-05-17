@@ -12,6 +12,18 @@
 
 function(kronos_build_metallib)
     cmake_parse_arguments(KMM "" "TARGET;OUTPUT;SDK" "SOURCES" ${ARGN})
+
+    # Fail fast on missing required args — keeps configure-time errors close
+    # to the call site instead of producing a silent empty .metallib later.
+    if(NOT KMM_TARGET)
+        message(FATAL_ERROR "kronos_build_metallib: TARGET is required")
+    endif()
+    if(NOT KMM_OUTPUT)
+        message(FATAL_ERROR "kronos_build_metallib: OUTPUT is required")
+    endif()
+    if(NOT KMM_SOURCES)
+        message(FATAL_ERROR "kronos_build_metallib: SOURCES is required (at least one .metal file)")
+    endif()
     if(NOT KMM_SDK)
         set(KMM_SDK macosx)
     endif()
