@@ -50,6 +50,7 @@ test/cmake_test_discovery_*.json
 
 # Worktrees
 .worktrees/
+.claude/worktrees/
 
 # Runtime output
 kronos.out.json
