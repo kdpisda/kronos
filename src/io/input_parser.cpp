@@ -401,6 +401,9 @@ HardwareParams parse_hardware(const YAML::Node& hw) {
     if (hw["mpi_tasks"]) {
         params.mpi_tasks = hw["mpi_tasks"].as<int>();
     }
+    if (hw["apple_fast_mode"]) {
+        params.apple_fast_mode = hw["apple_fast_mode"].as<bool>();
+    }
 
     return params;
 }

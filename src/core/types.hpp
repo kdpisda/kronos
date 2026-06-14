@@ -77,8 +77,9 @@ struct ConvergenceParams {
 // Hardware configuration
 struct HardwareParams {
     bool use_gpu{false};
-    std::string gpu_backend{"none"};  // "cuda", "hip", "none"
+    std::string gpu_backend{"none"};  // "cuda", "hip", "metal", "none"
     int mpi_tasks{1};
+    bool apple_fast_mode{false};      // opt-in fp32 fast path for Apple GPU
 };
 
 // Complete input specification

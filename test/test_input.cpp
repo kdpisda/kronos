@@ -619,3 +619,39 @@ pseudopotentials:
     EXPECT_EQ(parsed.input.pseudopotentials.at("Na"), "Na.ONCVPSP.upf");
     EXPECT_EQ(parsed.input.pseudopotentials.at("Cl"), "Cl.ONCVPSP.upf");
 }
+
+// ============================================================================
+// apple_fast_mode hardware parameter
+// ============================================================================
+
+TEST(InputParser, HardwareAppleFastModeDefaultsFalse) {
+    const char* yaml = R"(
+system:
+  lattice: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+  atoms:
+    - {symbol: Si, position: [0, 0, 0]}
+calculation:
+  ecutwfc: 20
+pseudopotentials:
+  Si: dummy.upf
+)";
+    ParsedInput parsed = parse_input_string(yaml);
+    EXPECT_FALSE(parsed.input.hardware.apple_fast_mode);
+}
+
+TEST(InputParser, HardwareAppleFastModeAcceptsTrue) {
+    const char* yaml = R"(
+system:
+  lattice: [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+  atoms:
+    - {symbol: Si, position: [0, 0, 0]}
+calculation:
+  ecutwfc: 20
+hardware:
+  apple_fast_mode: true
+pseudopotentials:
+  Si: dummy.upf
+)";
+    ParsedInput parsed = parse_input_string(yaml);
+    EXPECT_TRUE(parsed.input.hardware.apple_fast_mode);
+}
