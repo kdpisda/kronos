@@ -293,4 +293,40 @@ TEST(GPU, MetalContextInit) {
     EXPECT_FALSE(ctx.device_name().empty());
     EXPECT_NE(ctx.metal_queue(), nullptr);
 }
+
+TEST(GPU, MetalMallocFreeRoundTrip) {
+    auto& ctx = gpu::GPUContext::instance();
+    ctx.init();
+    ASSERT_TRUE(ctx.is_initialized());
+
+    constexpr size_t N = 1024;
+    void* p = gpu::gpu_malloc(N * sizeof(double));
+    ASSERT_NE(p, nullptr);
+    gpu::gpu_free(p);  // must not crash
+}
+
+TEST(GPU, MetalMemoryRoundTripComplex128) {
+    auto& ctx = gpu::GPUContext::instance();
+    ctx.init();
+    ASSERT_TRUE(ctx.is_initialized());
+
+    std::vector<complex_t> host_in(256);
+    for (size_t i = 0; i < host_in.size(); ++i) {
+        host_in[i] = complex_t{double(i), -double(i) * 0.5};
+    }
+
+    gpu::DeviceBuffer<complex_t> buf(host_in.size());
+    buf.upload(host_in);
+
+    // d2d round-trip via a second buffer
+    gpu::DeviceBuffer<complex_t> buf2(host_in.size());
+    gpu::gpu_memcpy_d2d(buf2.data(), buf.data(),
+                        host_in.size() * sizeof(complex_t));
+
+    auto host_out = buf2.download();
+    ASSERT_EQ(host_out.size(), host_in.size());
+    for (size_t i = 0; i < host_in.size(); ++i) {
+        EXPECT_EQ(host_in[i], host_out[i]);  // bitwise equal
+    }
+}
 #endif
