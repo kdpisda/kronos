@@ -40,9 +40,15 @@ TEST(GPU, MemoryAvailability) {
 TEST(GPU, MemoryInfo) {
     size_t free_mem = gpu::gpu_memory_free();
     size_t total_mem = gpu::gpu_memory_total();
-    // In CPU-only build, both return 0
-    EXPECT_EQ(free_mem, 0u);
-    EXPECT_EQ(total_mem, 0u);
+    if (gpu::gpu_available()) {
+        // GPU build: both return real (non-zero) values
+        EXPECT_GT(free_mem, 0u);
+        EXPECT_GT(total_mem, 0u);
+    } else {
+        // CPU-only build, both return 0
+        EXPECT_EQ(free_mem, 0u);
+        EXPECT_EQ(total_mem, 0u);
+    }
 }
 
 TEST(GPU, MallocThrowsInCPUBuild) {
@@ -132,9 +138,13 @@ TEST(GPU, ContextSingleton) {
 TEST(GPU, ContextInitCPUBuild) {
     auto& ctx = gpu::GPUContext::instance();
     ctx.init(0, 0);
-    // In CPU build, initialized_ remains false (no devices)
-    // num_devices should be 0
-    EXPECT_EQ(ctx.num_devices(), 0);
+    if (gpu::gpu_available()) {
+        // GPU build: at least one device available
+        EXPECT_GT(ctx.num_devices(), 0);
+    } else {
+        // CPU-only build: no devices, initialized_ remains false
+        EXPECT_EQ(ctx.num_devices(), 0);
+    }
 }
 
 // ============================================================================
@@ -272,3 +282,15 @@ TEST(GPUHamiltonian, KineticDiagonal) {
         EXPECT_DOUBLE_EQ(ke_gpu[i], ke_cpu[i]);
     }
 }
+
+#ifdef KRONOS_GPU_METAL
+TEST(GPU, MetalContextInit) {
+    auto& ctx = gpu::GPUContext::instance();
+    ctx.init(0, 0);
+    ASSERT_TRUE(ctx.is_initialized())
+        << "Expected MTLDevice to initialize on Apple Silicon";
+    EXPECT_GT(ctx.num_devices(), 0);
+    EXPECT_FALSE(ctx.device_name().empty());
+    EXPECT_NE(ctx.metal_queue(), nullptr);
+}
+#endif

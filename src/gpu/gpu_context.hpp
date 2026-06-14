@@ -35,6 +35,9 @@ public:
     /// Get the cuBLAS/rocBLAS handle (as opaque pointer).
     void* blas_handle() const { return blas_handle_; }
 
+    /// Get the Metal command queue (opaque MTL::CommandQueue*). Nullptr on non-Metal builds.
+    void* metal_queue() const { return metal_queue_; }
+
     /// Get the number of available GPU devices.
     int num_devices() const { return num_devices_; }
 
@@ -56,6 +59,7 @@ private:
     int device_id_{0};
     int num_devices_{0};
     void* blas_handle_{nullptr};
+    void* metal_queue_{nullptr};  // MTL::CommandQueue* on Metal builds
     std::string device_name_{"none"};
 };
 
