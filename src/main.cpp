@@ -19,6 +19,7 @@
 #include "utils/logger.hpp"
 #include "utils/timer.hpp"
 #include "utils/mpi_wrapper.hpp"
+#include "gpu/gpu_context.hpp"
 #include <iostream>
 #include <map>
 #include <string>
@@ -61,6 +62,14 @@ int main(int argc, char* argv[]) {
         // 3. Parse input
         auto [crystal, input] = parse_input(input_file);
         Logger::instance().info("init", "Input parsed successfully");
+
+#ifdef KRONOS_GPU_METAL
+        if (input.hardware.apple_fast_mode) {
+            gpu::GPUContext::instance().set_apple_fast_mode(true);
+            Logger::instance().warning("apple_fast_mode",
+                "fp32 GPU path active — results are not validation-grade");
+        }
+#endif
 
         // 4. Load pseudopotentials
         std::map<std::string, PseudoPotential> pseudopotentials;

@@ -47,6 +47,11 @@ public:
     /// Enable deterministic mode (cuBLAS workspace config).
     void set_deterministic(bool enable);
 
+    /// Apple-only: enable fp32 fast mode (NOT validation-grade).
+    /// No-op on cuda/hip builds. Default: false (declines GPU on Apple).
+    void set_apple_fast_mode(bool enable) { apple_fast_mode_ = enable; }
+    bool apple_fast_mode() const { return apple_fast_mode_; }
+
 private:
     GPUContext() = default;
     ~GPUContext();
@@ -61,6 +66,7 @@ private:
     void* blas_handle_{nullptr};
     void* metal_queue_{nullptr};  // MTL::CommandQueue* on Metal builds
     std::string device_name_{"none"};
+    bool apple_fast_mode_{false};
 };
 
 } // namespace kronos::gpu
