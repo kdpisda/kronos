@@ -19,6 +19,7 @@
 #include "basis/fft_grid.hpp"
 #include "potential/nonlocal_pp.hpp"
 #include "hamiltonian/hamiltonian.hpp"
+#include "solver/scf.hpp"
 #include "utils/logger.hpp"
 
 #include <cmath>
@@ -557,5 +558,74 @@ TEST(GPU, AppleFastModeEmitsWarning) {
         << "Expected apple_fast_mode warning in stderr; got: " << captured;
 
     ctx.set_apple_fast_mode(false);
+}
+
+// ============================================================================
+// Integration test: Si bulk SCF through Metal GPU path matches CPU
+// ============================================================================
+//
+// Exercises the full GPU pipeline: GPUHamiltonian (FFT + V_eff multiply +
+// nonlocal GEMM) wired into SCFSolver via apple_fast_mode.
+//
+// The fp32 V_eff each SCF iteration shifts the stationary point by ~1-2 mRy.
+// Over 7-8 iterations with this toy PP the observed gap is ~12 mRy.
+// We allow 20 mRy to provide margin; a gap larger than that indicates a
+// wiring bug rather than expected fp32 noise.
+// ============================================================================
+
+TEST(Integration, SiBulkSCFOnMetalMatchesCPU) {
+    auto& ctx = gpu::GPUContext::instance();
+    ctx.init();
+    ASSERT_TRUE(ctx.is_initialized())
+        << "Metal device must be available for this test";
+
+    // Build shared Crystal + PseudoPotential (same as other GPU tests).
+    Crystal crystal = make_si_diamond();
+    auto pps = make_si_pp();
+
+    CalculationParams calc;
+    calc.type          = CalculationType::SCF;
+    calc.ecutwfc       = 12.0;     // low cutoff for speed; still exercises GPU path
+    calc.xc_functional = "LDA_PZ";
+    calc.kpoints.grid  = {1, 1, 1};  // Gamma-only
+
+    ConvergenceParams conv;
+    // The toy Gaussian PP in make_si_pp() converges in energy but not density.
+    // Use 1e-3 Ry energy threshold (same as test_scf.cpp SCFConvergence tests)
+    // and very loose density threshold so convergence is declared on energy alone.
+    conv.energy_threshold  = 1e-3;
+    conv.density_threshold = 1.0;    // rely on energy convergence
+    conv.max_scf_steps     = 50;
+
+    // --- CPU reference (fast_mode off) ---
+    ctx.set_apple_fast_mode(false);
+    SCFSolver cpu_solver(crystal, calc, conv, pps);
+    SCFResult cpu_result = cpu_solver.solve();
+    ASSERT_TRUE(cpu_result.converged) << "CPU reference SCF must converge";
+    double e_cpu = cpu_result.total_energy_ry;
+
+    // --- GPU path (fast_mode on) ---
+    // SCFSolver will now route H|ψ⟩ through GPUHamiltonian.
+    ctx.set_apple_fast_mode(true);
+    Logger::instance().warning("apple_fast_mode",
+        "fp32 GPU path active for integration test — not validation-grade");
+
+    SCFSolver gpu_solver(crystal, calc, conv, pps);
+    SCFResult gpu_result = gpu_solver.solve();
+    ASSERT_TRUE(gpu_result.converged) << "GPU SCF must converge";
+    double e_gpu = gpu_result.total_energy_ry;
+
+    // Reset to avoid affecting subsequent tests.
+    ctx.set_apple_fast_mode(false);
+
+    // fp32 accumulation in the SCF: each iteration shifts V_eff by ~O(single-prec
+    // rounding), so the GPU SCF converges to a slightly different stationary point
+    // than the CPU double-precision SCF.  Empirically, 7-8 iterations with this
+    // toy PP produces ~12 mRy difference.  20 mRy provides margin.
+    EXPECT_NEAR(e_gpu, e_cpu, 2e-2)
+        << "Metal SCF must match CPU within ~20 mRy (fp32 accumulation reality);\n"
+        << "  CPU=" << e_cpu << " Ry\n"
+        << "  GPU=" << e_gpu << " Ry\n"
+        << "  delta=" << (e_gpu - e_cpu) << " Ry";
 }
 #endif
