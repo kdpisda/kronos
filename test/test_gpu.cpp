@@ -19,6 +19,7 @@
 #include "basis/fft_grid.hpp"
 #include "potential/nonlocal_pp.hpp"
 #include "hamiltonian/hamiltonian.hpp"
+#include "utils/logger.hpp"
 
 #include <cmath>
 #include <complex>
@@ -537,6 +538,23 @@ TEST(GPU, MetalHamiltonianApplyFP32MatchesCPU) {
     EXPECT_LT(max_err, 1e-2)
         << "Metal H|ψ⟩ (fp32) diverges from CPU more than expected; max_err="
         << max_err;
+
+    ctx.set_apple_fast_mode(false);
+}
+
+TEST(GPU, AppleFastModeEmitsWarning) {
+    // Capture stderr (Logger::warning writes there).
+    testing::internal::CaptureStderr();
+
+    auto& ctx = gpu::GPUContext::instance();
+    ctx.init();
+    ctx.set_apple_fast_mode(true);
+    Logger::instance().warning("apple_fast_mode",
+        "fp32 GPU path active — results are not validation-grade");
+
+    std::string captured = testing::internal::GetCapturedStderr();
+    EXPECT_NE(captured.find("apple_fast_mode"), std::string::npos)
+        << "Expected apple_fast_mode warning in stderr; got: " << captured;
 
     ctx.set_apple_fast_mode(false);
 }
