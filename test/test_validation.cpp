@@ -51,7 +51,9 @@ SCFResult run_si_scf(double ecutwfc, std::array<int,3> kgrid,
                      const std::map<std::string, PseudoPotential>& pps,
                      const std::string& xc = "LDA_PZ",
                      double ethr = 1e-3, double dthr = 1.0, int max_steps = 100) {
-    SKIP_IF_APPLE_FAST_MODE();
+    // GTEST_SKIP() cannot be called from a non-void return helper.
+    // Each TEST body that calls run_si_scf must SKIP_IF_APPLE_FAST_MODE()
+    // before the call. The macro stays a no-op in non-Metal builds.
     Crystal crystal = test::make_si_diamond_crystal();
     CalculationParams calc;
     calc.type = CalculationType::SCF;
@@ -93,6 +95,7 @@ complex_t inner_product(const CVec& a, const CVec& b) {
 // ============================================================================
 
 TEST(VariationalPrinciple, HigherCutoffLowerEnergy) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto r1 = run_si_scf(20.0, {1,1,1}, pps);
     auto r2 = run_si_scf(30.0, {1,1,1}, pps);
@@ -108,6 +111,7 @@ TEST(VariationalPrinciple, HigherCutoffLowerEnergy) {
 }
 
 TEST(VariationalPrinciple, HigherCutoffLowerEnergyNonlocal) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map_nonlocal();
     auto r1 = run_si_scf(12.0, {1,1,1}, pps);
     auto r2 = run_si_scf(20.0, {1,1,1}, pps);
@@ -123,6 +127,7 @@ TEST(VariationalPrinciple, HigherCutoffLowerEnergyNonlocal) {
 // ============================================================================
 
 TEST(ChargeConservation, OccupationsSumToNElectrons) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {1,1,1}, pps);
     if (!result.converged) {
@@ -211,6 +216,7 @@ TEST(ForceEnergyConsistency, SCFForceFiniteDifference) {
 }
 
 TEST(ForceEnergyConsistency, ForcesVanishAtEquilibrium) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {1,1,1}, pps);
     if (!result.converged) {
@@ -278,6 +284,7 @@ TEST(HamiltonianProperties, HermiticityWithSCFPotential) {
 }
 
 TEST(HamiltonianProperties, EigenvaluesSorted) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {2,2,2}, pps);
     if (!result.converged) {
@@ -348,6 +355,7 @@ TEST(MadelungConstant, CsClMadelungConstant) {
 // ============================================================================
 
 TEST(EnergyComponents, KineticEnergyPositive) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {1,1,1}, pps);
     if (!result.converged) {
@@ -358,6 +366,7 @@ TEST(EnergyComponents, KineticEnergyPositive) {
 }
 
 TEST(EnergyComponents, HartreeEnergyPositive) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {1,1,1}, pps);
     if (!result.converged) {
@@ -368,6 +377,7 @@ TEST(EnergyComponents, HartreeEnergyPositive) {
 }
 
 TEST(EnergyComponents, XCEnergyNegative) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {1,1,1}, pps);
     if (!result.converged) {
@@ -378,6 +388,7 @@ TEST(EnergyComponents, XCEnergyNegative) {
 }
 
 TEST(EnergyComponents, TotalEnergyNegative) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {1,1,1}, pps);
     if (!result.converged) {
@@ -388,6 +399,7 @@ TEST(EnergyComponents, TotalEnergyNegative) {
 }
 
 TEST(EnergyComponents, LDAandPBEGiveDifferentEnergy) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto r_lda = run_si_scf(10.0, {1,1,1}, pps, "LDA_PZ");
     auto r_pbe = run_si_scf(10.0, {1,1,1}, pps, "PBE");
