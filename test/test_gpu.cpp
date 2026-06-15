@@ -490,4 +490,54 @@ TEST(GPU, MetalMemoryRoundTripComplex128) {
         EXPECT_EQ(host_in[i], host_out[i]);  // bitwise equal
     }
 }
+
+TEST(GPU, MetalHamiltonianApplyFP32MatchesCPU) {
+    auto& ctx = gpu::GPUContext::instance();
+    ctx.init();
+    ASSERT_TRUE(ctx.is_initialized());
+    ctx.set_apple_fast_mode(true);
+
+    Crystal crystal = make_si_diamond();
+    auto pps = make_si_pp();
+    PlaneWaveBasis basis(crystal, 15.0);
+    FFTGrid fft_grid(basis);
+    NonlocalPP nonlocal_pp(crystal, basis, pps);
+    Hamiltonian cpu_ham(crystal, basis, fft_grid, nonlocal_pp);
+
+    int num_grid = fft_grid.total_points();
+    std::vector<complex_t> veff(num_grid, {-1.0, 0.0});
+    cpu_ham.update_veff(veff);
+
+    GPUHamiltonian gpu_ham(crystal, basis, fft_grid, nonlocal_pp, cpu_ham);
+    gpu_ham.update_veff(veff);
+    ASSERT_TRUE(gpu_ham.gpu_active())
+        << "With apple_fast_mode=true, GPUHamiltonian must activate the GPU path";
+
+    // Non-trivial input wavefunction
+    int npw = static_cast<int>(basis.num_pw());
+    std::mt19937_64 rng(7);
+    std::uniform_real_distribution<double> dist(-1.0, 1.0);
+    CVec psi(npw);
+    for (auto& x : psi) x = {dist(rng), dist(rng)};
+
+    Vec3 k_frac = {0.0, 0.0, 0.0};
+    CVec hpsi_gpu = gpu_ham.apply(psi, k_frac);
+    CVec hpsi_cpu = cpu_ham.apply(psi, k_frac);
+
+    ASSERT_EQ(hpsi_gpu.size(), hpsi_cpu.size());
+    // fp32 cumulative error — generous tolerance.
+    // FFT roundtrip + V_eff multiply + (nonlocal projector if any) each
+    // contribute ~1e-5 per element; over npw elements with O(npw) ops the
+    // typical element error lands in the 1e-3 to 1e-4 range.
+    double max_err = 0.0;
+    for (int i = 0; i < npw; ++i) {
+        double e = std::abs(hpsi_gpu[i] - hpsi_cpu[i]);
+        max_err = std::max(max_err, e);
+    }
+    EXPECT_LT(max_err, 1e-2)
+        << "Metal H|ψ⟩ (fp32) diverges from CPU more than expected; max_err="
+        << max_err;
+
+    ctx.set_apple_fast_mode(false);
+}
 #endif
