@@ -5,13 +5,11 @@
 
 #ifdef KRONOS_GPU_METAL
 
-// metal-cpp implementation-emission macros — MUST appear in exactly one .cpp
-// in the entire program. This is that file. Do NOT define these in any other
-// Metal source file.
-#define NS_PRIVATE_IMPLEMENTATION
-#define MTL_PRIVATE_IMPLEMENTATION
-#define CA_PRIVATE_IMPLEMENTATION
-
+// NOTE: NS/MTL/CA_PRIVATE_IMPLEMENTATION are NOT defined here.
+// They are emitted by vkFFT_Structs.h (via vkFFT.h) when included in
+// fft_metal.cpp. Defining them again here would cause duplicate symbols.
+// Including the headers below without the impl macros is fine — the linker
+// picks up the implementations from fft_metal.cpp's translation unit.
 #include <Foundation/Foundation.hpp>
 #include <Metal/Metal.hpp>
 #include <QuartzCore/QuartzCore.hpp>

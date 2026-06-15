@@ -285,6 +285,60 @@ TEST(GPUHamiltonian, KineticDiagonal) {
 }
 
 #ifdef KRONOS_GPU_METAL
+TEST(GPU, MetalFFTGridThrowsWhenFastModeOff) {
+    auto& ctx = gpu::GPUContext::instance();
+    ctx.init();
+    ASSERT_TRUE(ctx.is_initialized());
+    ctx.set_apple_fast_mode(false);
+
+    EXPECT_THROW(gpu::GPUFFTGrid({16, 16, 16}), gpu::GPUNotAvailableError);
+}
+
+TEST(GPU, MetalFFTRoundTripFastMode) {
+    auto& ctx = gpu::GPUContext::instance();
+    ctx.init();
+    ASSERT_TRUE(ctx.is_initialized());
+    ctx.set_apple_fast_mode(true);
+
+    const std::array<int, 3> dims = {16, 16, 16};
+    const int N = dims[0] * dims[1] * dims[2];
+
+    std::mt19937_64 rng(99);
+    std::uniform_real_distribution<double> dist(-1.0, 1.0);
+    std::vector<complex_t> in(N);
+    for (auto& x : in) x = {dist(rng), dist(rng)};
+
+    gpu::DeviceBuffer<complex_t> d_in(N);  d_in.upload(in);
+    gpu::DeviceBuffer<complex_t> d_k(N);
+    gpu::DeviceBuffer<complex_t> d_out(N);
+
+    gpu::GPUFFTGrid grid(dims);
+    grid.forward(d_in.data(), d_k.data());
+    grid.inverse(d_k.data(),  d_out.data());
+
+    auto out = d_out.download();
+    // forward+inverse leaves a factor of N (FFTW/VkFFT convention).
+    for (int i = 0; i < N; ++i) out[i] /= double(N);
+
+    // fp32 tolerance for a 16x16x16 FFT round-trip
+    for (int i = 0; i < N; ++i) {
+        EXPECT_NEAR(std::abs(out[i] - in[i]), 0.0, 1e-3)
+            << "i=" << i;
+    }
+
+    ctx.set_apple_fast_mode(false);
+}
+
+TEST(GPU, MetalFFTGridDimsAccessor) {
+    auto& ctx = gpu::GPUContext::instance();
+    ctx.init();
+    ctx.set_apple_fast_mode(true);
+    gpu::GPUFFTGrid g({16, 16, 16});
+    auto d = g.dims();
+    EXPECT_EQ(d[0], 16); EXPECT_EQ(d[1], 16); EXPECT_EQ(d[2], 16);
+    ctx.set_apple_fast_mode(false);
+}
+
 TEST(GPU, MetalGEMMThrowsWhenFastModeOff) {
     auto& ctx = gpu::GPUContext::instance();
     ctx.init();
