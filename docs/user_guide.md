@@ -28,7 +28,7 @@ cd build && ctest --output-on-failure   # run tests
 ./build/src/kronos examples/si_bulk.yaml > si_result.json
 ```
 
-GPU builds use `-DKRONOS_GPU_BACKEND=cuda` or `-DKRONOS_GPU_BACKEND=hip`.
+GPU builds use `-DKRONOS_GPU_BACKEND=cuda`, `-DKRONOS_GPU_BACKEND=hip`, or `-DKRONOS_GPU_BACKEND=metal` (Apple Silicon, fp32 research tier -- see Section 2 note).
 
 ## 2. YAML Input File Reference
 
@@ -67,7 +67,8 @@ convergence:
 
 hardware:
   use_gpu: false
-  gpu_backend: none               # none | cuda | hip
+  gpu_backend: none               # none | cuda | hip | metal
+  apple_fast_mode: false          # Apple-only: opt-in fp32 fast path (NOT validation-grade)
   mpi_tasks: 1
 ```
 
@@ -92,10 +93,13 @@ hardware:
 | `convergence.force` | float | 1e-3 | > 0 | Force tolerance (Ry/bohr) |
 | `pseudopotentials.<El>` | string | required | file path | Path to UPF v2 file |
 | `hardware.use_gpu` | bool | false | true/false | Enable GPU |
-| `hardware.gpu_backend` | string | `none` | none, cuda, hip | GPU backend |
+| `hardware.gpu_backend` | string | `none` | none, cuda, hip, metal | GPU backend |
+| `hardware.apple_fast_mode` | bool | false | true/false | Apple Metal only: opt-in fp32 fast path. NOT validation-grade; see note below. |
 | `hardware.mpi_tasks` | int | 1 | >= 1 | MPI task count |
 
 Every atomic species in `system.atoms` must have a matching `pseudopotentials` entry. Pseudopotential paths resolve relative to the current working directory.
+
+**Note on `apple_fast_mode`:** Setting `hardware.apple_fast_mode: true` (or passing `--apple-fast-mode` on the CLI) enables the Apple Silicon Metal GPU path. Because Apple's Metal Shading Language has no `double` type, all GPU computations run in fp32. This is intentionally opt-in and NOT validation-grade: the validation test suite refuses to run in this mode. Use it for local development and iteration speed only; use CUDA or HIP for science-grade results. GPU builds: `-DKRONOS_GPU_BACKEND=metal` requires Xcode.app (macOS 13+) with the Metal toolchain — CLT-only installs are insufficient.
 
 ## 3. Example Calculations
 

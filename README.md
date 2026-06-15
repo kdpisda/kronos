@@ -54,7 +54,7 @@ cd build && ctest --output-on-failure
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `KRONOS_GPU_BACKEND` | `none` | GPU backend: `none`, `cuda`, or `hip` |
+| `KRONOS_GPU_BACKEND` | `none` | GPU backend: `none`, `cuda`, `hip`, or `metal` |
 | `KRONOS_BUILD_TESTS` | `ON` | Build GoogleTest test suite |
 | `KRONOS_BUILD_PYTHON` | `OFF` | Build pybind11 Python bindings |
 
@@ -68,7 +68,23 @@ cmake --build build -j$(nproc)
 # HIP/AMD
 cmake -B build -S . -DKRONOS_GPU_BACKEND=hip -DROCM_PATH=/opt/rocm
 cmake --build build -j$(nproc)
+
+# Metal (Apple Silicon -- macOS 13+, Xcode.app + Metal Toolchain required)
+cmake -B build -S . -DKRONOS_GPU_BACKEND=metal
+cmake --build build -j$(sysctl -n hw.ncpu)
 ```
+
+> **Apple Silicon Metal backend — research/dev tier only.** The Apple GPU runs
+> in fp32 throughout (Apple's Metal Shading Language has no `double` type
+> support). It is NOT validation-grade — Delta-test and other QE-comparison
+> runs refuse to use this path. Use it for local development, GPU-orchestration
+> bug catching, and iteration speed. For science-grade fp64 results, use the
+> NVIDIA (CUDA) or AMD (HIP) backends.
+>
+> To activate the Apple GPU path, the user must set
+> `hardware.apple_fast_mode: true` in the YAML input or pass
+> `--apple-fast-mode` on the CLI. Without this flag, KRONOS on a Metal build
+> falls back to CPU.
 
 ## Usage
 
