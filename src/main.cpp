@@ -19,6 +19,7 @@
 #include "utils/logger.hpp"
 #include "utils/timer.hpp"
 #include "utils/mpi_wrapper.hpp"
+#include "gpu/gpu_context.hpp"
 #include <iostream>
 #include <map>
 #include <string>
@@ -34,15 +35,27 @@ int main(int argc, char* argv[]) {
     // Set MPI rank for structured logging
     Logger::instance().set_mpi_rank(my_rank);
 
-    // 1. Parse command line (just input file path for v0.1)
+    // 1. Parse command line
     if (argc < 2) {
         if (my_rank == 0) {
-            std::cerr << "Usage: kronos <input.yaml>" << std::endl;
+            std::cerr << "Usage: kronos <input.yaml> [--apple-fast-mode]" << std::endl;
         }
         mpi::finalize();
         return 1;
     }
     std::string input_file = argv[1];
+
+    bool cli_apple_fast = false;
+    for (int i = 2; i < argc; ++i) {
+        std::string a = argv[i];
+        if (a == "--apple-fast-mode") {
+            cli_apple_fast = true;
+        } else {
+            std::cerr << "Unknown argument: " << a << "\n";
+            mpi::finalize();
+            return 1;
+        }
+    }
 
     // 2. Print banner (rank 0 only)
     if (my_rank == 0) {
@@ -61,6 +74,16 @@ int main(int argc, char* argv[]) {
         // 3. Parse input
         auto [crystal, input] = parse_input(input_file);
         Logger::instance().info("init", "Input parsed successfully");
+
+        if (cli_apple_fast) input.hardware.apple_fast_mode = true;
+
+#ifdef KRONOS_GPU_METAL
+        if (input.hardware.apple_fast_mode) {
+            gpu::GPUContext::instance().set_apple_fast_mode(true);
+            Logger::instance().warning("apple_fast_mode",
+                "fp32 GPU path active — results are not validation-grade");
+        }
+#endif
 
         // 4. Load pseudopotentials
         std::map<std::string, PseudoPotential> pseudopotentials;

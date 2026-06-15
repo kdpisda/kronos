@@ -1,6 +1,10 @@
 #include "solver/scf.hpp"
 #include "basis/kpoints.hpp"
 #include "hamiltonian/hamiltonian.hpp"
+#ifdef KRONOS_GPU_METAL
+#include "hamiltonian/gpu_hamiltonian.hpp"
+#include "gpu/gpu_context.hpp"
+#endif
 #include "potential/hartree.hpp"
 #include "potential/xc.hpp"
 #include "potential/gradient.hpp"
@@ -581,6 +585,18 @@ SCFResult SCFSolver::solve() {
     NonlocalPP nonlocal_pp(crystal_, basis, pseudopotentials_);
     Hamiltonian ham(crystal_, basis, fft_grid, nonlocal_pp);
 
+    // GPU Hamiltonian: active on Metal builds when apple_fast_mode is set.
+    // Falls back silently to CPU when fast mode is off (GPUHamiltonian ctor
+    // calls gpu_available() which returns false in that case).
+#ifdef KRONOS_GPU_METAL
+    std::unique_ptr<GPUHamiltonian> gpu_ham_ptr;
+    if (gpu::GPUContext::instance().apple_fast_mode()) {
+        gpu_ham_ptr = std::make_unique<GPUHamiltonian>(
+            crystal_, basis, fft_grid, nonlocal_pp, ham);
+        Logger::instance().info("scf", "GPU Hamiltonian active (apple_fast_mode)");
+    }
+#endif
+
     // PAW calculator (active only when PAW PPs are present)
     PAWCalculator paw_calc(crystal_, basis, fft_grid, pseudopotentials_);
     bool use_paw = paw_calc.has_paw();
@@ -1017,16 +1033,42 @@ SCFResult SCFSolver::solve() {
 
         for (int ispin = 0; ispin < nspin; ++ispin) {
             if (nspin == 2) {
-                ham.update_veff(ispin == 0 ? veff_up_r : veff_dn_r);
+                const auto& spin_veff = (ispin == 0 ? veff_up_r : veff_dn_r);
+#ifdef KRONOS_GPU_METAL
+                if (gpu_ham_ptr) {
+                    gpu_ham_ptr->update_veff(spin_veff);
+                } else {
+                    ham.update_veff(spin_veff);
+                }
+#else
+                ham.update_veff(spin_veff);
+#endif
             } else {
+#ifdef KRONOS_GPU_METAL
+                if (gpu_ham_ptr) {
+                    gpu_ham_ptr->update_veff(veff_r);
+                } else {
+                    ham.update_veff(veff_r);
+                }
+#else
                 ham.update_veff(veff_r);
+#endif
             }
 
             for (int iloc = 0; iloc < nk_local; ++iloc) {
                 KRONOS_TIMER("eigensolver");
                 int ik_global = my_kpoint_indices[iloc];
+#ifdef KRONOS_GPU_METAL
+                auto h_apply = gpu_ham_ptr
+                    ? gpu_ham_ptr->get_apply_function(kpoints[ik_global])
+                    : ham.get_apply_function(kpoints[ik_global]);
+                auto precond = gpu_ham_ptr
+                    ? gpu_ham_ptr->kinetic_diagonal(kpoints[ik_global])
+                    : ham.kinetic_diagonal(kpoints[ik_global]);
+#else
                 auto h_apply = ham.get_apply_function(kpoints[ik_global]);
                 auto precond = ham.kinetic_diagonal(kpoints[ik_global]);
+#endif
 
                 // Prepare k-point for nonlocal projectors (needed for PAW S operator)
                 nonlocal_pp.prepare_kpoint(kpoints[ik_global]);

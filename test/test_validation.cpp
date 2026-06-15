@@ -18,10 +18,29 @@
 #include "potential/ewald.hpp"
 #include "potential/nonlocal_pp.hpp"
 #include "potential/xc.hpp"
+#ifdef KRONOS_GPU_METAL
+#include "gpu/gpu_context.hpp"
+#endif
 
 #include <cmath>
 #include <complex>
 #include <random>
+
+// Guard macro: skip any validation test when apple_fast_mode is active.
+// fp32 Apple GPU is not validation-grade (cannot meet the < 2 meV/atom bar).
+// This is a no-op in CPU and CUDA/HIP builds.
+#ifdef KRONOS_GPU_METAL
+#define SKIP_IF_APPLE_FAST_MODE()                                                \
+    do {                                                                          \
+        if (::kronos::gpu::GPUContext::instance().apple_fast_mode()) {           \
+            GTEST_SKIP() << "Validation suite refuses to run with apple_fast_mode " \
+                            "(fp32 Apple GPU is not validation-grade). Disable via " \
+                            "hardware.apple_fast_mode: false in the YAML input."; \
+        }                                                                         \
+    } while (0)
+#else
+#define SKIP_IF_APPLE_FAST_MODE() do {} while (0)
+#endif
 
 using namespace kronos;
 
@@ -32,6 +51,9 @@ SCFResult run_si_scf(double ecutwfc, std::array<int,3> kgrid,
                      const std::map<std::string, PseudoPotential>& pps,
                      const std::string& xc = "LDA_PZ",
                      double ethr = 1e-3, double dthr = 1.0, int max_steps = 100) {
+    // GTEST_SKIP() cannot be called from a non-void return helper.
+    // Each TEST body that calls run_si_scf must SKIP_IF_APPLE_FAST_MODE()
+    // before the call. The macro stays a no-op in non-Metal builds.
     Crystal crystal = test::make_si_diamond_crystal();
     CalculationParams calc;
     calc.type = CalculationType::SCF;
@@ -73,6 +95,7 @@ complex_t inner_product(const CVec& a, const CVec& b) {
 // ============================================================================
 
 TEST(VariationalPrinciple, HigherCutoffLowerEnergy) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto r1 = run_si_scf(20.0, {1,1,1}, pps);
     auto r2 = run_si_scf(30.0, {1,1,1}, pps);
@@ -88,6 +111,7 @@ TEST(VariationalPrinciple, HigherCutoffLowerEnergy) {
 }
 
 TEST(VariationalPrinciple, HigherCutoffLowerEnergyNonlocal) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map_nonlocal();
     auto r1 = run_si_scf(12.0, {1,1,1}, pps);
     auto r2 = run_si_scf(20.0, {1,1,1}, pps);
@@ -103,6 +127,7 @@ TEST(VariationalPrinciple, HigherCutoffLowerEnergyNonlocal) {
 // ============================================================================
 
 TEST(ChargeConservation, OccupationsSumToNElectrons) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {1,1,1}, pps);
     if (!result.converged) {
@@ -129,6 +154,7 @@ TEST(ChargeConservation, OccupationsSumToNElectrons) {
 // ============================================================================
 
 TEST(ForceEnergyConsistency, SCFForceFiniteDifference) {
+    SKIP_IF_APPLE_FAST_MODE();
     // Use Ewald-only finite difference for clean force validation.
     // SCF forces at low cutoff are noisy; Ewald forces are exact and fast.
     auto pps = test::make_si_pp_map();
@@ -190,6 +216,7 @@ TEST(ForceEnergyConsistency, SCFForceFiniteDifference) {
 }
 
 TEST(ForceEnergyConsistency, ForcesVanishAtEquilibrium) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {1,1,1}, pps);
     if (!result.converged) {
@@ -210,6 +237,7 @@ TEST(ForceEnergyConsistency, ForcesVanishAtEquilibrium) {
 // ============================================================================
 
 TEST(HamiltonianProperties, HermiticityWithSCFPotential) {
+    SKIP_IF_APPLE_FAST_MODE();
     Crystal crystal = test::make_si_diamond_crystal();
     auto pps = test::make_si_pp_map();
 
@@ -256,6 +284,7 @@ TEST(HamiltonianProperties, HermiticityWithSCFPotential) {
 }
 
 TEST(HamiltonianProperties, EigenvaluesSorted) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {2,2,2}, pps);
     if (!result.converged) {
@@ -277,6 +306,7 @@ TEST(HamiltonianProperties, EigenvaluesSorted) {
 // ============================================================================
 
 TEST(MadelungConstant, NaClMadelungHighPrecision) {
+    SKIP_IF_APPLE_FAST_MODE();
     Crystal nacl = test::make_nacl_crystal(5.64);
     // Charges: Na=+1, Cl=-1
     std::vector<double> charges = {+1, +1, +1, +1, -1, -1, -1, -1};
@@ -298,6 +328,7 @@ TEST(MadelungConstant, NaClMadelungHighPrecision) {
 }
 
 TEST(MadelungConstant, CsClMadelungConstant) {
+    SKIP_IF_APPLE_FAST_MODE();
     Crystal cscl = test::make_cscl_crystal(4.12);
     // Charges: Cs=+1, Cl=-1
     std::vector<double> charges = {+1, -1};
@@ -324,6 +355,7 @@ TEST(MadelungConstant, CsClMadelungConstant) {
 // ============================================================================
 
 TEST(EnergyComponents, KineticEnergyPositive) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {1,1,1}, pps);
     if (!result.converged) {
@@ -334,6 +366,7 @@ TEST(EnergyComponents, KineticEnergyPositive) {
 }
 
 TEST(EnergyComponents, HartreeEnergyPositive) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {1,1,1}, pps);
     if (!result.converged) {
@@ -344,6 +377,7 @@ TEST(EnergyComponents, HartreeEnergyPositive) {
 }
 
 TEST(EnergyComponents, XCEnergyNegative) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {1,1,1}, pps);
     if (!result.converged) {
@@ -354,6 +388,7 @@ TEST(EnergyComponents, XCEnergyNegative) {
 }
 
 TEST(EnergyComponents, TotalEnergyNegative) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto result = run_si_scf(10.0, {1,1,1}, pps);
     if (!result.converged) {
@@ -364,6 +399,7 @@ TEST(EnergyComponents, TotalEnergyNegative) {
 }
 
 TEST(EnergyComponents, LDAandPBEGiveDifferentEnergy) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
     auto r_lda = run_si_scf(10.0, {1,1,1}, pps, "LDA_PZ");
     auto r_pbe = run_si_scf(10.0, {1,1,1}, pps, "PBE");
@@ -383,6 +419,7 @@ TEST(EnergyComponents, LDAandPBEGiveDifferentEnergy) {
 
 // Al FCC: simple sp-metal, Gaussian smearing, LDA
 TEST(MultiSystem, AlFCCGammaLDA) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps["Al"] = parse_upf("../pseudopotentials/Al.pz-vbc.UPF");
@@ -427,6 +464,7 @@ TEST(MultiSystem, AlFCCGammaLDA) {
 }
 
 TEST(MultiSystem, AlFCC444LDA) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps["Al"] = parse_upf("../pseudopotentials/Al.pz-vbc.UPF");
@@ -469,6 +507,7 @@ TEST(MultiSystem, AlFCC444LDA) {
 
 // Cu FCC: d-electron metal, LDA with smearing
 TEST(MultiSystem, CuFCCGammaLDA) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps["Cu"] = parse_upf("../pseudopotentials/Cu.pz-d-hgh.UPF");
@@ -516,6 +555,7 @@ TEST(MultiSystem, CuFCCGammaLDA) {
 // H2O with toy (analytic) PPs: SCF convergence check
 // Uses soft O PP (r_loc=1.0) and relaxed convergence for stability
 TEST(MultiSystem, H2OGammaConvergence) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_h2o_pp_map();
     Crystal crystal = test::make_h2o_crystal();
 
@@ -547,6 +587,7 @@ TEST(MultiSystem, H2OGammaConvergence) {
 
 // H2O: forces obey Newton's 3rd law (sum of forces ≈ 0)
 TEST(MultiSystem, H2ONewtonThirdLaw) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_h2o_pp_map();
     Crystal crystal = test::make_h2o_crystal();
 
@@ -591,6 +632,7 @@ TEST(MultiSystem, H2ONewtonThirdLaw) {
 // Note: H2O in a 15-bohr box creates a large FFT grid (~9000 PWs at ecut=30).
 // Use moderate cutoff and smearing for practical convergence.
 TEST(MultiSystem, H2OGammaRealPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps = test::make_h2o_pp_map_real();
@@ -641,6 +683,7 @@ TEST(MultiSystem, H2OGammaRealPP) {
 
 // MgO with toy PPs: Gamma-only convergence
 TEST(MultiSystem, MgOGammaConvergence) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_mgo_pp_map();
     Crystal crystal = test::make_mgo_crystal();
 
@@ -682,6 +725,7 @@ TEST(MultiSystem, MgOGammaConvergence) {
 
 // MgO with real UPF pseudopotentials: Gamma-only
 TEST(MultiSystem, MgOGammaRealPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps = test::make_mgo_pp_map_real();
@@ -733,6 +777,7 @@ TEST(MultiSystem, MgOGammaRealPP) {
 
 // MgO with 2x2x2 k-grid (real PPs) — reduced from 4x4x4 to fit timeout
 TEST(MultiSystem, MgO444RealPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps = test::make_mgo_pp_map_real();
@@ -777,6 +822,7 @@ TEST(MultiSystem, MgO444RealPP) {
 // Graphene with toy PPs: Gamma-only convergence
 // Relaxed convergence for toy PP (energy threshold 1e-3)
 TEST(MultiSystem, GrapheneGammaConvergence) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_graphene_pp_map();
     Crystal crystal = test::make_graphene_crystal();
 
@@ -808,6 +854,7 @@ TEST(MultiSystem, GrapheneGammaConvergence) {
 
 // Graphene with real UPF pseudopotentials: Gamma-only — reduced cutoff for speed
 TEST(MultiSystem, GrapheneGammaRealPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps = test::make_graphene_pp_map_real();
@@ -847,6 +894,7 @@ TEST(MultiSystem, GrapheneGammaRealPP) {
 
 // Graphene with 4x4x1 k-grid (2D periodicity, real PPs)
 TEST(MultiSystem, Graphene441RealPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps = test::make_graphene_pp_map_real();
@@ -901,6 +949,7 @@ TEST(MultiSystem, Graphene441RealPP) {
 
 // Fe BCC with toy PP: spin-polarized SCF convergence
 TEST(MultiSystem, FeBCCSpinToyPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_fe_bcc_pp_map();
     Crystal crystal = test::make_fe_bcc_crystal();
 
@@ -943,6 +992,7 @@ TEST(MultiSystem, FeBCCSpinToyPP) {
 
 // Fe BCC with real UPF PP: spin-polarized LSDA
 TEST(MultiSystem, FeBCCSpinRealPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps = test::make_fe_bcc_pp_map_real();
@@ -997,6 +1047,7 @@ TEST(MultiSystem, FeBCCSpinRealPP) {
 
 // Fe BCC with 2x2x2 k-grid, spin-polarized (real PP) — reduced from 4x4x4 to fit timeout
 TEST(MultiSystem, FeBCC444SpinRealPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps = test::make_fe_bcc_pp_map_real();
@@ -1047,6 +1098,7 @@ TEST(MultiSystem, FeBCC444SpinRealPP) {
 
 // Fe BCC: verify spin-polarized energy is lower than unpolarized
 TEST(MultiSystem, FeBCCSpinLowerEnergy) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_fe_bcc_pp_map();
     Crystal crystal = test::make_fe_bcc_crystal();
 
@@ -1091,6 +1143,7 @@ TEST(MultiSystem, FeBCCSpinLowerEnergy) {
 
 // Al forces at non-equilibrium: displacement + FD validation
 TEST(MultiSystem, AlFCCForceValidation) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps["Al"] = parse_upf("../pseudopotentials/Al.pz-vbc.UPF");
@@ -1192,6 +1245,7 @@ TEST(PBERegression, Si222PBE) {
 // from Ewald + local PP. We validate that PBE SCF forces are consistent
 // with Ewald forces at equilibrium (which should vanish).
 TEST(ForceEnergyConsistency, PBEForcesVanishAtEquilibrium) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
 
     Crystal crystal = test::make_si_diamond_crystal();
@@ -1236,6 +1290,7 @@ TEST(ForceEnergyConsistency, PBEForcesVanishAtEquilibrium) {
 
 // Fe BCC PBE spin-polarized: convergence and magnetic moment
 TEST(SpinGGA, FeBCCPBESpinToyPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_fe_bcc_pp_map();
     Crystal crystal = test::make_fe_bcc_crystal();
 
@@ -1301,6 +1356,7 @@ TEST(SpinGGA, SiPBENspin1Unchanged) {
 
 // nspin=2 with zero initial magnetization + PBE should match nspin=1 PBE
 TEST(SpinGGA, PBESpinUnpolarizedMatchesNspin1) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
 
     // nspin=1 PBE — use relaxed convergence for toy PPs
@@ -1373,6 +1429,7 @@ TEST(SpinGGA, PBEVariationalPrinciple) {
 // to the well-converged Gamma-only reference (within ~1 mRy ideally).
 // The unsymmetrized result was ~0.6 mRy = 4.2 meV/atom off from QE.
 TEST(DensitySymmetrization, Si444ShiftedEnergy) {
+    SKIP_IF_APPLE_FAST_MODE();
     auto pps = test::make_si_pp_map();
 
     // Run 4x4x4 shifted k-grid (ecutwfc=12 to fit in timeout)
@@ -1500,6 +1557,7 @@ Crystal make_si_qe_crystal() {
 
 // Si Gamma-only: compare KRONOS vs QE reference -14.51875980 Ry
 TEST(QEValidation, SiGammaLDA) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps["Si"] = parse_upf("../pseudopotentials/Si.pz-vbc.UPF");
@@ -1544,6 +1602,7 @@ TEST(QEValidation, SiGammaLDA) {
 
 // Si 2x2x2 shifted: compare KRONOS vs QE reference -15.79449593 Ry
 TEST(QEValidation, Si222ShiftedLDA) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps["Si"] = parse_upf("../pseudopotentials/Si.pz-vbc.UPF");
@@ -1587,6 +1646,7 @@ TEST(QEValidation, Si222ShiftedLDA) {
 
 // 4x4x4 shifted vs QE: the key validation point from QE example01
 TEST(QEValidation, Si444ShiftedLDA) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps["Si"] = parse_upf("../pseudopotentials/Si.pz-vbc.UPF");
@@ -1631,6 +1691,7 @@ TEST(QEValidation, Si444ShiftedLDA) {
 
 // PBE validation: confirm PBE gives physically reasonable results with real PP
 TEST(QEValidation, SiPBERealPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps["Si"] = parse_upf("../pseudopotentials/Si_ONCV_PBE-1.2.upf");
@@ -1690,6 +1751,7 @@ TEST(QEValidation, SiPBERealPP) {
 // Si LDA 2x2x2 shifted with real Si.pz-vbc.UPF pseudopotential
 // QE reference: -15.79449593 Ry (from scf-kauto.in, celldm(1)=10.20)
 TEST(QEComparison, SiLDA222ShiftedRealPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps["Si"] = parse_upf("../pseudopotentials/Si.pz-vbc.UPF");
@@ -1732,6 +1794,7 @@ TEST(QEComparison, SiLDA222ShiftedRealPP) {
 
 // Si LDA 4x4x4 shifted with real Si.pz-vbc.UPF pseudopotential
 TEST(QEComparison, SiLDA444ShiftedRealPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps["Si"] = parse_upf("../pseudopotentials/Si.pz-vbc.UPF");
@@ -1772,6 +1835,7 @@ TEST(QEComparison, SiLDA444ShiftedRealPP) {
 
 // Si LDA Gamma with real PP vs QE reference -14.51875980 Ry
 TEST(QEComparison, SiLDAGammaRealPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps["Si"] = parse_upf("../pseudopotentials/Si.pz-vbc.UPF");
@@ -1817,6 +1881,7 @@ TEST(QEComparison, SiLDAGammaRealPP) {
 
 // PBE with real ONCV pseudopotential: Gamma-only
 TEST(PBEValidation, SiPBEGammaRealPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps["Si"] = parse_upf("../pseudopotentials/Si_ONCV_PBE-1.2.upf");
@@ -1852,6 +1917,7 @@ TEST(PBEValidation, SiPBEGammaRealPP) {
 
 // PBE with real ONCV PP and 2x2x2 k-grid
 TEST(PBEValidation, SiPBE222RealPP) {
+    SKIP_IF_APPLE_FAST_MODE();
     std::map<std::string, PseudoPotential> pps;
     try {
         pps["Si"] = parse_upf("../pseudopotentials/Si_ONCV_PBE-1.2.upf");

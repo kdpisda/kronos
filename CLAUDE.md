@@ -91,13 +91,23 @@ cmake --build build -j$(nproc)
 
 # HIP/AMD build
 cmake -B build -S . -DKRONOS_GPU_BACKEND=hip -DROCM_PATH=/opt/rocm
+
+# Metal build (Apple Silicon -- macOS 13+, Xcode.app + Metal Toolchain required)
+cmake -B build -S . -DKRONOS_GPU_BACKEND=metal
+cmake --build build -j$(sysctl -n hw.ncpu)
 ```
+
+> **Apple Silicon Metal backend — research/dev tier only.** Runs entirely in
+> fp32 (Apple's MSL has no `double`). NOT validation-grade. Activate with
+> `hardware.apple_fast_mode: true` in YAML or `--apple-fast-mode` CLI flag;
+> without it, KRONOS falls back to CPU even on a Metal build. Requires
+> Xcode.app, not just CLT.
 
 ### CMake Options
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `KRONOS_GPU_BACKEND` | `none` | GPU backend: `none`, `cuda`, or `hip` |
+| `KRONOS_GPU_BACKEND` | `none` | GPU backend: `none`, `cuda`, `hip`, or `metal` |
 | `KRONOS_BUILD_TESTS` | `ON` | Build GoogleTest test suite |
 | `KRONOS_BUILD_PYTHON` | `OFF` | Build pybind11 Python bindings |
 
@@ -114,6 +124,10 @@ FFTW3, BLAS, LAPACK, yaml-cpp. Optional: HDF5, MPI, libxc (built-in LDA fallback
 ## Numerical Constraints (Hard Rules)
 
 - **Always float64/complex128** for wavefunction coefficients — never float32
+  *(sole exception: the Apple Metal backend when `apple_fast_mode` is explicitly
+  enabled by the user; this opt-in narrows at the device boundary and is
+  explicitly NOT validation-grade — the validation suite refuses to run in
+  this mode)*
 - ecutrho must be ≥ 4 × ecutwfc (norm-conserving PP) or 12 × ecutwfc (PAW)
 - Negative electron density: clamp to 0 with warning; abort if > 1e-6
 - Energy oscillation > 1 Ry between consecutive SCF steps: abort with diagnostic

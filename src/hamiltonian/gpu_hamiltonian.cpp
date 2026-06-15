@@ -190,8 +190,12 @@ CVec GPUHamiltonian::apply_gpu(const CVec& psi_g, const Vec3& k_frac) {
         // (In production: custom kernel)
         auto psi_r = d_psi_r.download();
         auto veff = d_veff_->download();
+        // GPU inverse FFT (VkFFT) does NOT normalize by 1/N, unlike CPU
+        // FFTGrid::inverse which divides by N. Apply the normalization here
+        // to match CPU convention before the V_eff pointwise multiply.
+        const double inv_N = 1.0 / static_cast<double>(total_points);
         for (int i = 0; i < total_points; ++i) {
-            psi_r[i] *= veff[i];
+            psi_r[i] = psi_r[i] * inv_N * veff[i];
         }
         d_psi_r.upload(psi_r);
 

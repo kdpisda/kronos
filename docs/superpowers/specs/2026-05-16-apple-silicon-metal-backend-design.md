@@ -1,9 +1,34 @@
 # KRONOS Metal Backend — Design Spec
 
-**Date:** 2026-05-16
+**Date:** 2026-05-16 (original) / 2026-06-15 (revised after MSL fp64 discovery)
 **Author:** Kuldeep Pisda (via Claude brainstorming session)
-**Status:** Draft, pending implementation plan
+**Status:** Revised — fp32-only Apple dev tier
 **Target version:** v0.5.1 (Apple Silicon increment on top of v0.5 GPU support)
+
+## 0. 2026-06-15 REVISION — fp64 not available on Apple GPU
+
+The original spec (§3 Precision strategy, "option D") planned to ship a fp64
+default mode on Apple GPU via Metal Shading Language's emulated `double`. That
+turned out to be impossible: Apple's MSL compiler **refuses `double` outright**
+("'double' is not supported in Metal" — Xcode 26.5 / Metal Toolchain v17.6).
+The type is reserved (`__Reserved_Name__Do_not_use_double2`) and there is no
+hardware fp64 path on any Apple GPU.
+
+**Pivot:** the Apple Metal backend is now a fp32-only "research/dev" tier
+(closer to original brainstorming option C). Implications:
+- Apple GPU runs are **never validation-grade**. The < 2 meV/atom Delta test
+  remains a CUDA/HIP responsibility on real fp64 hardware.
+- `apple_fast_mode` is no longer "opt-in fp32"; on Apple builds it is the
+  **only mode**. The flag is retained for explicit acknowledgement at runtime.
+- `gpu::gemm` and `gpu::fft` on the Metal backend narrow `complex<double>` →
+  `complex<float>` at the device boundary when `apple_fast_mode == true`. When
+  the flag is false, the Metal backend declines the call (throws
+  `GPUNotAvailableError`) so the existing `GPUHamiltonian` fallback routes it
+  to CPU.
+- Numerical agreement tests use fp32 tolerances (~1e-4 to 1e-5), not 1e-12.
+- The validation suite refuses to run with the Metal backend active.
+
+Sections below describe the **revised** design.
 
 ## 1. Motivation
 

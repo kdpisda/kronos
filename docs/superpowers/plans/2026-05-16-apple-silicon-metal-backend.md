@@ -2,13 +2,27 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a third GPU backend (`metal`) to KRONOS so the existing GPU code path can be exercised on Apple Silicon Macs, with fp64 by default (correctness-grade) and an opt-in fp32 fast mode (dev iteration).
+**Goal:** Add a third GPU backend (`metal`) to KRONOS so the existing GPU code path can be exercised on Apple Silicon Macs. **fp32 only** (Apple MSL has no `double` support). Apple Metal is a research/dev tier — not validation-grade.
 
-**Architecture:** Mirror the existing `cuda`/`hip` backend pattern in `src/gpu/`. Physics code stays vendor-agnostic; all Apple-specific calls live behind the same `gpu::` interfaces. Use **metal-cpp** for the Apple SDK bindings (pure C++17, no Objective-C++) and **VkFFT** for 3D complex FFT (fp64 + fp32). One templated MSL kernel handles complex GEMM for both precisions.
+**Architecture:** Mirror the existing `cuda`/`hip` backend pattern in `src/gpu/`. Physics code stays vendor-agnostic; all Apple-specific calls live behind the same `gpu::` interfaces. Use **metal-cpp** for the Apple SDK bindings (pure C++17, no Objective-C++) and **VkFFT** for 3D complex FFT (fp32 only on Apple). One MSL kernel handles complex GEMM in fp32.
 
 **Tech Stack:** C++20, Metal Shading Language, metal-cpp (header-only Apple bindings), VkFFT (FetchContent), CMake 3.20+, GoogleTest, `xcrun metal`/`metallib` for shader compilation.
 
 **Spec:** `docs/superpowers/specs/2026-05-16-apple-silicon-metal-backend-design.md`
+
+---
+
+## 2026-06-15 REVISION — fp32-only Apple GPU
+
+Tasks 6–10 completed against the original spec. While running Task 10 we discovered Apple MSL refuses `double` entirely. The plan is now revised for fp32-only Apple. Tasks 11–19 implementation notes:
+
+- **Task 11 (unchanged):** plumb `apple_fast_mode` accessor through `GPUContext` + `main.cpp`. The semantics shift to "Apple GPU enable", not "opt-in fp32".
+- **Task 12 (revised):** `blas_metal.cpp::gemm` narrows `complex<double> → complex<float>` at the device boundary when `apple_fast_mode == true`; otherwise throws `GPUNotAvailableError` so `GPUHamiltonian` falls back to CPU. Tests at fp32 tolerance (~1e-5 element-wise).
+- **Task 13 (revised):** `fft_metal.cpp` initializes VkFFT in fp32 mode unconditionally. Tests at fp32 tolerance.
+- **Task 14 (revised):** `GPU.MetalHamiltonianApplyFP32MatchesCPU` (renamed from FP64) — tolerance loosened to ~1e-4 per coefficient. Skipped unless `apple_fast_mode` is enabled.
+- **Task 16 (revised):** validation suite refuses Apple/Metal backend entirely (not just `apple_fast_mode` flag — they're equivalent on Apple).
+- **Task 17 (revised):** Si bulk SCF agreement loosened to ~1 mRy total energy (fp32 accumulation error is structural, not solvable with this hardware).
+- **Task 18 (revised):** docs say "Apple Metal: research/dev tier only, fp32 throughout, NOT validation-grade".
 
 ---
 
@@ -95,8 +109,11 @@ elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "metal")
         URL_HASH SHA256=2c637afac98e6a86d9f9b3284755d75d6c5ad6b30b3c5e51b14e5a0f49f33c8e
     )
     FetchContent_MakeAvailable(metal_cpp)
-    add_library(metal_cpp INTERFACE)
-    target_include_directories(metal_cpp INTERFACE ${metal_cpp_SOURCE_DIR})
+    # INTERFACE target is named kronos_metal_cpp to avoid colliding with
+    # the FetchContent population name (metal_cpp). Downstream callers
+    # use target_link_libraries(... kronos_metal_cpp).
+    add_library(kronos_metal_cpp INTERFACE)
+    target_include_directories(kronos_metal_cpp INTERFACE ${metal_cpp_SOURCE_DIR})
     message(STATUS "KRONOS: Metal backend enabled (metal-cpp at ${metal_cpp_SOURCE_DIR})")
 endif()
 ```
@@ -148,10 +165,12 @@ Inside the `metal` branch in `CMakeLists.txt` (the `elseif` from Task 2), before
     if(NOT vkfft_POPULATED)
         FetchContent_Populate(vkfft)
     endif()
-    add_library(vkfft INTERFACE)
-    target_include_directories(vkfft INTERFACE
-        ${vkfft_SOURCE_DIR}/vkFFT)
-    target_compile_definitions(vkfft INTERFACE
+    # INTERFACE target is named kronos_vkfft to avoid colliding with the
+    # FetchContent population name (vkfft). Downstream callers use kronos_vkfft.
+    add_library(kronos_vkfft INTERFACE)
+    target_include_directories(kronos_vkfft INTERFACE
+        "${vkfft_SOURCE_DIR}/vkFFT")
+    target_compile_definitions(kronos_vkfft INTERFACE
         VKFFT_BACKEND=5)   # 5 = Metal backend
     message(STATUS "KRONOS: VkFFT fetched at ${vkfft_SOURCE_DIR}")
 ```
@@ -481,8 +500,8 @@ elseif(KRONOS_GPU_BACKEND_LOWER STREQUAL "metal")
     target_sources(kronos_lib PRIVATE ${KRONOS_METAL_SOURCES})
     target_compile_definitions(kronos_lib PUBLIC KRONOS_GPU_METAL)
     target_link_libraries(kronos_lib PUBLIC
-        metal_cpp
-        vkfft
+        kronos_metal_cpp
+        kronos_vkfft
         "-framework Metal"
         "-framework Foundation"
         "-framework QuartzCore"
