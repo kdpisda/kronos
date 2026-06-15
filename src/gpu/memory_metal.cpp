@@ -128,6 +128,12 @@ size_t gpu_memory_total() {
     return static_cast<size_t>(physmem);
 }
 
+// Internal accessor for blas_metal.cpp / fft_metal.cpp to bind MTLBuffer args.
+// Not declared in any header — extern-declared at the use site.
+MTL::Buffer* metal_buffer_for(const void* p) {
+    return BufferRegistry::instance().lookup(const_cast<void*>(p));
+}
+
 } // namespace kronos::gpu
 
 #endif // KRONOS_GPU_METAL

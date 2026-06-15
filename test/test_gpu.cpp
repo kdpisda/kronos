@@ -22,6 +22,7 @@
 
 #include <cmath>
 #include <complex>
+#include <random>
 #include <vector>
 
 using namespace kronos;
@@ -284,6 +285,112 @@ TEST(GPUHamiltonian, KineticDiagonal) {
 }
 
 #ifdef KRONOS_GPU_METAL
+TEST(GPU, MetalGEMMThrowsWhenFastModeOff) {
+    auto& ctx = gpu::GPUContext::instance();
+    ctx.init();
+    ASSERT_TRUE(ctx.is_initialized());
+    ctx.set_apple_fast_mode(false);  // explicit
+
+    const int N = 4;
+    gpu::DeviceBuffer<complex_t> A(N*N), B(N*N), C(N*N);
+    EXPECT_THROW(
+        gpu::gemm(N, N, N,
+                  complex_t{1.0, 0.0}, A.data(), N, B.data(), N,
+                  complex_t{0.0, 0.0}, C.data(), N),
+        gpu::GPUNotAvailableError);
+}
+
+TEST(GPU, MetalGEMMFastModeIdentity) {
+    auto& ctx = gpu::GPUContext::instance();
+    ctx.init();
+    ASSERT_TRUE(ctx.is_initialized());
+    ctx.set_apple_fast_mode(true);
+
+    const int N = 64;
+    std::vector<complex_t> A(N * N, {0, 0}), B(N * N, {0, 0});
+    for (int i = 0; i < N; ++i) {
+        A[i + i * N] = {1.0, 0.0};
+        B[i + i * N] = {1.0, 0.0};
+    }
+    std::vector<complex_t> C(N * N, {0, 0});
+
+    gpu::DeviceBuffer<complex_t> dA(N*N); dA.upload(A);
+    gpu::DeviceBuffer<complex_t> dB(N*N); dB.upload(B);
+    gpu::DeviceBuffer<complex_t> dC(N*N); dC.upload(C);
+
+    gpu::gemm(N, N, N,
+              complex_t{1.0, 0.0}, dA.data(), N, dB.data(), N,
+              complex_t{0.0, 0.0}, dC.data(), N);
+
+    auto Cout = dC.download();
+    for (int i = 0; i < N; ++i) {
+        for (int j = 0; j < N; ++j) {
+            complex_t expected = (i == j) ? complex_t{1.0, 0.0} : complex_t{0.0, 0.0};
+            // fp32 tolerance
+            EXPECT_NEAR(std::abs(Cout[i + j * N] - expected), 0.0, 1e-5)
+                << "i=" << i << " j=" << j;
+        }
+    }
+
+    ctx.set_apple_fast_mode(false);  // reset
+}
+
+TEST(GPU, MetalGEMMFastModeRandomMatchesCPUFP32) {
+    auto& ctx = gpu::GPUContext::instance();
+    ctx.init();
+    ASSERT_TRUE(ctx.is_initialized());
+    ctx.set_apple_fast_mode(true);
+
+    const int M = 17, N = 13, K = 23;  // intentionally non-tile-aligned
+    std::mt19937_64 rng(42);
+    std::uniform_real_distribution<double> dist(-1.0, 1.0);
+    auto rand_mat = [&](int rows, int cols) {
+        std::vector<complex_t> v(rows * cols);
+        for (auto& x : v) x = {dist(rng), dist(rng)};
+        return v;
+    };
+
+    auto A = rand_mat(M, K);
+    auto B = rand_mat(K, N);
+    auto C = rand_mat(M, N);
+    auto C_ref = C;
+
+    complex_t alpha{0.7, -0.3};
+    complex_t beta {0.4,  0.2};
+
+    // CPU reference computed at fp32 (matching what GPU sees after narrowing).
+    for (int j = 0; j < N; ++j)
+    for (int i = 0; i < M; ++i) {
+        std::complex<float> s{0.0f, 0.0f};
+        for (int k = 0; k < K; ++k) {
+            std::complex<float> a{float(A[i + k * M].real()), float(A[i + k * M].imag())};
+            std::complex<float> b{float(B[k + j * K].real()), float(B[k + j * K].imag())};
+            s += a * b;
+        }
+        std::complex<float> alpha_f{float(alpha.real()), float(alpha.imag())};
+        std::complex<float> beta_f {float(beta.real()),  float(beta.imag())};
+        std::complex<float> c_old{float(C_ref[i + j * M].real()), float(C_ref[i + j * M].imag())};
+        std::complex<float> result = alpha_f * s + beta_f * c_old;
+        C_ref[i + j * M] = complex_t{result.real(), result.imag()};
+    }
+
+    gpu::DeviceBuffer<complex_t> dA(M*K); dA.upload(A);
+    gpu::DeviceBuffer<complex_t> dB(K*N); dB.upload(B);
+    gpu::DeviceBuffer<complex_t> dC(M*N); dC.upload(C);
+
+    gpu::gemm(M, N, K, alpha, dA.data(), M, dB.data(), K,
+              beta, dC.data(), M);
+
+    auto Cout = dC.download();
+    for (int i = 0; i < int(Cout.size()); ++i) {
+        // fp32 tolerance scaled by K (accumulation error)
+        EXPECT_NEAR(std::abs(Cout[i] - C_ref[i]), 0.0, 1e-4)
+            << "mismatch at index " << i;
+    }
+
+    ctx.set_apple_fast_mode(false);
+}
+
 TEST(GPU, MetalContextInit) {
     auto& ctx = gpu::GPUContext::instance();
     ctx.init(0, 0);
