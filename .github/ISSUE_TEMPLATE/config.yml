@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions
+    url: https://github.com/kdpisda/kronos/discussions
+    about: For general questions, ideas, show-and-tell, and open-ended discussion. Discussions are threaded and searchable; please prefer them over Issues for anything that isn't an actionable bug or feature request.
+  - name: KRONOS Documentation
+    url: https://kdpisda.github.io/kronos/
+    about: User guide, architecture overview, physics & math notes, benchmarks, and API reference. Check here first — your question may already be answered.
+  - name: Security vulnerabilities
+    url: https://github.com/kdpisda/kronos/security/advisories/new
+    about: Report security issues privately via GitHub Security Advisories rather than as public issues.
