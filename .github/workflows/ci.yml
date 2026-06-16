@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel duplicate runs on the same ref (e.g. force-push to a PR branch).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cpu-build-and-test:
+    name: CPU build + ctest (Ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake \
+            ninja-build \
+            g++ \
+            libfftw3-dev \
+            libblas-dev \
+            liblapack-dev \
+            libyaml-cpp-dev \
+            libhdf5-dev \
+            libopenmpi-dev \
+            openmpi-bin \
+            libxc-dev \
+            libsymspg-dev \
+            python3 \
+            python3-pip
+          echo "OMPI_ALLOW_RUN_AS_ROOT=1" >> $GITHUB_ENV
+          echo "OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1" >> $GITHUB_ENV
+
+      - name: Show toolchain versions
+        run: |
+          cmake --version
+          g++ --version
+          mpirun --version || true
+
+      - name: Configure (CPU, tests on)
+        run: |
+          cmake -B build -S . \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DKRONOS_BUILD_TESTS=ON
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Run ctest
+        working-directory: build
+        run: ctest -j2 --output-on-failure
+
+      - name: Upload CTest logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-logs-${{ github.run_id }}
+          path: |
+            build/Testing/Temporary/LastTest.log
+            build/Testing/Temporary/CTestCostData.txt
+          if-no-files-found: ignore
+          retention-days: 14
