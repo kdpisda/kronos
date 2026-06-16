@@ -117,7 +117,7 @@ Breaking down each term:
 - $-E_\mathrm{H}$: removes the overcounted half of the Hartree self-energy ($E_\mathrm{band}$ has $\int v_\mathrm{H} n = 2E_\mathrm{H}$, so subtracting $E_\mathrm{H}$ leaves $+E_\mathrm{H}$, the correct contribution).
 - $+E_\mathrm{xc}[n]$: the true XC energy, a functional of the density.
 - $-\int v_\mathrm{xc} n$: removes the XC potential energy that was included in the eigenvalues.
-- $E_\mathrm{ion-ion}$: classical ion-ion interaction, computed by Ewald summation. See [Ewald Summation](/physics/ewald-summation) for details.
+- $E_\mathrm{ion-ion}$: classical ion-ion interaction, computed by Ewald summation. See [Ewald Summation in the legacy Physics Notes](/docs/physics_notes#6-ewald-summation) for the derivation; a dedicated page is on the roadmap.
 
 This decomposition is implemented in `src/solver/scf.cpp`. The Hartree energy is computed after each SCF iteration by `HartreeSolver::energy()`, and the double-counting correction is applied immediately before writing the total energy to the JSON output.
 

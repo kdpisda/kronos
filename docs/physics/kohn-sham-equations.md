@@ -106,7 +106,7 @@ The KS equations are inherently nonlinear: $v_\mathrm{eff}$ depends on $n(\mathb
 5. **Mixing**: blend $n^{(\mathrm{new})}$ with $n^{(\mathrm{old})}$ using Pulay/DIIS density mixing (history depth 8) to accelerate convergence and suppress charge sloshing.
 6. **Convergence check**: if $\|n^{(\mathrm{new})} - n^{(\mathrm{old})}\|$ and $|E^{(\mathrm{new})} - E^{(\mathrm{old})}|$ are both below tolerance, stop. Otherwise return to step 2.
 
-This self-consistent field (SCF) cycle is the central loop of every DFT code. For the operational view of how KRONOS implements it — timings, convergence thresholds, abort conditions — see [SCF Flowchart](/architecture/scf-flowchart).
+This self-consistent field (SCF) cycle is the central loop of every DFT code. For the operational view of how KRONOS implements it — timings, convergence thresholds, abort conditions — see [SCF Flowchart](/docs/architecture/scf-flowchart).
 
 ## The DFT total energy
 
@@ -154,7 +154,7 @@ KRONOS's implementation maps directly onto the KS formalism:
 
 - **`SCFSolver`** (`src/solver/scf.cpp`) drives the SCF loop. It maintains the current density, calls the potential builders, invokes the eigensolver per k-point, applies Fermi-level bisection, and runs Pulay/DIIS mixing.
 
-- **Hamiltonian application** (`src/hamiltonian/`) computes $H|\psi\rangle$ as: (1) kinetic term $|\mathbf{k}+\mathbf{G}|^2 c(\mathbf{G})$ in G-space; (2) local potential $v_\mathrm{eff}(\mathbf{r}) \psi(\mathbf{r})$ via inverse FFT → multiply → FFT; (3) nonlocal pseudopotential via GEMM projections. See [Algorithms](/architecture/algorithms) for the GPU hot-path breakdown.
+- **Hamiltonian application** (`src/hamiltonian/`) computes $H|\psi\rangle$ as: (1) kinetic term $|\mathbf{k}+\mathbf{G}|^2 c(\mathbf{G})$ in G-space; (2) local potential $v_\mathrm{eff}(\mathbf{r}) \psi(\mathbf{r})$ via inverse FFT → multiply → FFT; (3) nonlocal pseudopotential via GEMM projections. See [Algorithms](/docs/architecture/algorithms) for the GPU hot-path breakdown.
 
 - **Eigensolver**: Davidson diagonalization at each k-point (subspace dimension $3N_\mathrm{bands}$), with automatic fallback to LOBPCG if the Davidson residual exceeds $10^3$.
 
@@ -162,7 +162,7 @@ KRONOS's implementation maps directly onto the KS formalism:
 
 - **k-point parallelism** (`src/utils/mpi_wrapper.cpp`): k-points are distributed round-robin across MPI ranks; densities are reduced via `MPI_Allreduce` before mixing.
 
-The SCF convergence criteria are $|dE| < 10^{-8}$ Ry and $|dn|_\mathrm{max} < 10^{-7}$ e/bohr³, with a hard abort at 200 iterations if neither is met. See [SCF Flowchart](/architecture/scf-flowchart) for the complete decision tree.
+The SCF convergence criteria are $|dE| < 10^{-8}$ Ry and $|dn|_\mathrm{max} < 10^{-7}$ e/bohr³, with a hard abort at 200 iterations if neither is met. See [SCF Flowchart](/docs/architecture/scf-flowchart) for the complete decision tree.
 
 ## References
 

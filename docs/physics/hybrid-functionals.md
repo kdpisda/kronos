@@ -20,11 +20,11 @@ sidebar_position: 8
 
 Hybrid density functionals mix a fraction of exact (Hartree-Fock) exchange into the semi-local exchange-correlation energy. This controlled dose of non-local exchange repairs the most systematic failure of LDA and GGA approximations — self-interaction error — and brings predicted band gaps within ~10–15% of experiment, compared to the 30–50% underestimate typical of GGA. KRONOS implements PBE0 and HSE06 via the `ExactExchange` class in `src/potential/exact_exchange.cpp`, accelerated by the Adaptively Compressed Exchange (ACE) technique of Lin Lin (2016).
 
-All equations use **Rydberg atomic units** ($\hbar = 1$, $m_e = 1/2$, $e^2 = 2$) throughout, matching the KRONOS source. The bare Coulomb kernel in Rydberg units is $2/r$ in real space and $8\pi/G^2$ in reciprocal space — see [Rydberg Units](/physics/rydberg-units) for the full unit table.
+All equations use **Rydberg atomic units** ($\hbar = 1$, $m_e = 1/2$, $e^2 = 2$) throughout, matching the KRONOS source. The bare Coulomb kernel in Rydberg units is $2/r$ in real space and $8\pi/G^2$ in reciprocal space — see [Rydberg Units](/docs/physics/rydberg-units) for the full unit table.
 
 ## What hybrids are
 
-The exchange-correlation energy splits naturally into exchange and correlation parts: $E_\mathrm{xc} = E_x + E_c$. In the Kohn-Sham framework (see [Kohn-Sham Equations](/physics/kohn-sham-equations)), the exact exchange energy is given by the Fock integral over occupied orbitals:
+The exchange-correlation energy splits naturally into exchange and correlation parts: $E_\mathrm{xc} = E_x + E_c$. In the Kohn-Sham framework (see [Kohn-Sham Equations](/docs/physics/kohn-sham-equations)), the exact exchange energy is given by the Fock integral over occupied orbitals:
 
 $$E_x^\mathrm{HF} = -\frac{1}{2} \sum_{i,j} \int\!\int \frac{2 \, \psi_i^*(\mathbf{r}) \psi_j(\mathbf{r}) \psi_j^*(\mathbf{r}') \psi_i(\mathbf{r}')}{|\mathbf{r} - \mathbf{r}'|} \, d^3r \, d^3r'$$
 

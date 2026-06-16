@@ -113,7 +113,7 @@ The mixer lives in `src/solver/mixing.cpp` as the `PulayMixer` class. Its respon
 4. Solve the augmented linear system, falling back to shorter history if the pivot threshold is crossed.
 5. Construct the mixed input density, clamp $n(\mathbf{r}) \geq 0$, and renormalize to conserve total electron count.
 
-After the mix, the loop returns to step (a) of the SCF flow at [`/architecture/scf-flowchart`](/architecture/scf-flowchart). The data structures and call sites are documented in the architecture page on [algorithms](/architecture/algorithms).
+After the mix, the loop returns to step (a) of the SCF flow at [SCF Flowchart](/docs/architecture/scf-flowchart). The data structures and call sites are documented in the architecture page on [Algorithms](/docs/architecture/algorithms).
 
 ## References
 
