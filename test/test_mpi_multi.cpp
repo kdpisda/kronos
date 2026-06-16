@@ -197,7 +197,7 @@ TEST(MPIMulti, SiGammaMatchesSerial) {
 
     // Serial baseline: -28.6052 Ry (from MEMORY.md)
     // All ranks should agree
-    double energy = result.total_energy;
+    double energy = result.total_energy_ry;
     double ref = energy;  // Use this rank's result as reference
     mpi::bcast(&ref, 1, 0);
     EXPECT_NEAR(energy, ref, 1e-12);
@@ -226,7 +226,7 @@ TEST(MPIMulti, Si2x2x2MatchesSerial) {
     EXPECT_TRUE(result.converged);
 
     // All ranks must have identical total energy
-    double energy = result.total_energy;
+    double energy = result.total_energy_ry;
     double ref = energy;
     mpi::bcast(&ref, 1, 0);
     EXPECT_NEAR(energy, ref, 1e-12);
