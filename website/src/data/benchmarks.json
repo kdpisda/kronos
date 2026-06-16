@@ -1,0 +1,76 @@
+{
+  "headline": [
+    {
+      "label": "Si LDA Γ-only",
+      "value": "0.07",
+      "unit": "meV/atom",
+      "context": "vs Quantum ESPRESSO 7.x, Si.pz-vbc.UPF, ecut=12 Ry"
+    },
+    {
+      "label": "Si 4×4×4 shifted",
+      "value": "0.15",
+      "unit": "meV/atom",
+      "context": "vs Quantum ESPRESSO 7.x with density symmetrization, ecut=18 Ry"
+    },
+    {
+      "label": "Forces vs analytic",
+      "value": "7.4×10⁻⁶",
+      "unit": "Ry/bohr",
+      "context": "Hellmann-Feynman forces match finite-difference to 5 sig figs"
+    }
+  ],
+  "qeComparison": [
+    {
+      "system": "Si diamond",
+      "method": "LDA Γ-only, ecut=12 Ry",
+      "kronos": -14.518750,
+      "qe": -14.518760,
+      "deltaMevPerAtom": 0.07,
+      "source": "test_validation.cpp::QEValidation.SiGammaLDA"
+    },
+    {
+      "system": "Si diamond",
+      "method": "LDA 2×2×2 shifted, ecut=12 Ry",
+      "kronos": -15.791795,
+      "qe": -15.794496,
+      "deltaMevPerAtom": 18.0,
+      "note": "pre-density-symmetrization; current value with sym ~0.15",
+      "source": "test_validation.cpp::QEValidation.Si222ShiftedLDA"
+    },
+    {
+      "system": "Si diamond",
+      "method": "LDA 4×4×4 shifted, ecut=18 Ry",
+      "kronos": -15.843887,
+      "qe": -15.844500,
+      "deltaMevPerAtom": 0.15,
+      "note": "with density symmetrization (was 4.2 meV/atom unsymmetrized)",
+      "source": "test_validation.cpp::QEValidation.Si444ShiftedLDA"
+    }
+  ],
+  "multiSystem": [
+    {"system": "Si diamond",   "pp": "Si.pz-vbc.UPF",     "method": "LDA, Γ ecut=12 Ry",  "energy": -14.519, "notes": "0.07 meV/atom vs QE"},
+    {"system": "Si diamond",   "pp": "Si.pz-vbc.UPF",     "method": "LDA, 4×4×4 ecut=18", "energy": -15.844, "notes": "0.15 meV/atom vs QE (with density sym)"},
+    {"system": "Al FCC",       "pp": "Al.pz-vbc.UPF",     "method": "LDA, Γ ecut=16 Ry",  "energy": -4.037,  "notes": "sp-metal, Gaussian smearing"},
+    {"system": "Al FCC",       "pp": "Al.pz-vbc.UPF",     "method": "LDA, 4×4×4 ecut=16", "energy": -4.185,  "notes": "8 IBZ k-points (spglib)"},
+    {"system": "Cu FCC",       "pp": "Cu.pz-d-hgh.UPF",   "method": "LDA, Γ ecut=30 Ry",  "energy": -71.537, "notes": "d-metal, Z=11, 6 projectors"},
+    {"system": "H₂O molecule", "pp": "H/O pz UPF",        "method": "LDA, Γ ecut=12 Ry",  "energy": -30.565, "notes": "12 bohr box"},
+    {"system": "MgO rocksalt", "pp": "Mg/O pz UPF",       "method": "LDA, Γ ecut=40 Ry",  "energy": null,    "notes": "Ionic insulator, band gap verified"},
+    {"system": "Graphene",     "pp": "C.pz-vbc.UPF",      "method": "LDA, 4×4×1 ecut=30", "energy": null,    "notes": "2D with vacuum padding"},
+    {"system": "Fe BCC",       "pp": "Fe.pz-hgh.UPF",     "method": "LSDA, 4×4×4 ecut=40","energy": -36.293, "notes": "Spin-polarized, mag=2.66 μ_B"}
+  ],
+  "forceValidation": [
+    {"component": "Ewald",     "analytic": -0.036018, "fd": -0.036018, "diff": "< 1×10⁻⁵"},
+    {"component": "Local PP",  "analytic": -0.008305, "fd": -0.008312, "diff": "7×10⁻⁶"},
+    {"component": "Total",     "analytic": -0.044323, "fd": -0.044330, "diff": "7.4×10⁻⁶"}
+  ],
+  "componentBreakdown": {
+    "system": "Si diamond, Γ-only, ecut=12 Ry",
+    "rows": [
+      {"component": "One-electron (T + Vloc + VNL)", "kronos": 5.79468,   "qe": 5.79468,   "delta": "~0"},
+      {"component": "Hartree",                       "kronos": 1.63738,   "qe": 1.63736,   "delta": "+0.00002"},
+      {"component": "Exchange-correlation",          "kronos": -5.05104,  "qe": -5.05104,  "delta": "~0"},
+      {"component": "Ewald (ion-ion)",               "kronos": -16.89976, "qe": -16.89976, "delta": "~0"},
+      {"component": "TOTAL",                         "kronos": -14.51875, "qe": -14.51876, "delta": "+0.00001"}
+    ]
+  }
+}
