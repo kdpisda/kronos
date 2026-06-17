@@ -129,10 +129,15 @@ const config: Config = {
           items: [
             {label: 'Benchmarks', to: '/benchmarks'},
             {label: 'GitHub', href: 'https://github.com/kdpisda/kronos'},
+            // rel="noopener" only (no noreferrer) so the author's own site
+            // sees KRONOS docs as a traffic source in its analytics.
+            {label: 'Author — kdpisda.in', href: 'https://kdpisda.in', rel: 'noopener'},
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Kuldeep Pisda. Licensed under GPL-3.0. Built with Docusaurus.`,
+      // The author's name in the copyright also links back, with the same
+      // referrer-preserving rel. Docusaurus renders `copyright` as HTML.
+      copyright: `Copyright © ${new Date().getFullYear()} <a href="https://kdpisda.in" target="_blank" rel="noopener">Kuldeep Pisda</a>. Licensed under GPL-3.0. Built with Docusaurus.`,
     },
     prism: {
       theme: prismThemes.github,
