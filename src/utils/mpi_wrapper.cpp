@@ -105,45 +105,61 @@ bool is_initialized() {
 
 void allreduce_sum(const double* sendbuf, double* recvbuf, int count) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Allreduce(sendbuf, recvbuf, count, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Allreduce(sendbuf, recvbuf, count, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        return;
+    }
+#endif
     if (sendbuf != recvbuf) {
         std::memcpy(recvbuf, sendbuf, static_cast<size_t>(count) * sizeof(double));
     }
-#endif
 }
 
 void allreduce_sum(const std::complex<double>* sendbuf,
                    std::complex<double>* recvbuf, int count) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Allreduce(sendbuf, recvbuf, count, MPI_C_DOUBLE_COMPLEX, MPI_SUM,
-                  MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Allreduce(sendbuf, recvbuf, count, MPI_C_DOUBLE_COMPLEX, MPI_SUM,
+                      MPI_COMM_WORLD);
+        return;
+    }
+#endif
     if (sendbuf != recvbuf) {
         std::memcpy(recvbuf, sendbuf,
                     static_cast<size_t>(count) * sizeof(std::complex<double>));
     }
-#endif
 }
 
 void allreduce_sum_inplace(double* buf, int count) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Allreduce(MPI_IN_PLACE, buf, count, MPI_DOUBLE, MPI_SUM,
-                  MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Allreduce(MPI_IN_PLACE, buf, count, MPI_DOUBLE, MPI_SUM,
+                      MPI_COMM_WORLD);
+        return;
+    }
+#endif
     (void)buf;
     (void)count;
-#endif
 }
 
 void allreduce_sum_inplace(std::complex<double>* buf, int count) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Allreduce(MPI_IN_PLACE, buf, count, MPI_C_DOUBLE_COMPLEX, MPI_SUM,
-                  MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Allreduce(MPI_IN_PLACE, buf, count, MPI_C_DOUBLE_COMPLEX, MPI_SUM,
+                      MPI_COMM_WORLD);
+        return;
+    }
+#endif
     (void)buf;
     (void)count;
-#endif
 }
 
 // =========================================================================
@@ -152,32 +168,44 @@ void allreduce_sum_inplace(std::complex<double>* buf, int count) {
 
 void bcast(double* buf, int count, int root) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Bcast(buf, count, MPI_DOUBLE, root, MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Bcast(buf, count, MPI_DOUBLE, root, MPI_COMM_WORLD);
+        return;
+    }
+#endif
     (void)buf;
     (void)count;
     (void)root;
-#endif
 }
 
 void bcast(std::complex<double>* buf, int count, int root) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Bcast(buf, count, MPI_C_DOUBLE_COMPLEX, root, MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Bcast(buf, count, MPI_C_DOUBLE_COMPLEX, root, MPI_COMM_WORLD);
+        return;
+    }
+#endif
     (void)buf;
     (void)count;
     (void)root;
-#endif
 }
 
 void bcast(int* buf, int count, int root) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Bcast(buf, count, MPI_INT, root, MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Bcast(buf, count, MPI_INT, root, MPI_COMM_WORLD);
+        return;
+    }
+#endif
     (void)buf;
     (void)count;
     (void)root;
-#endif
 }
 
 // =========================================================================
@@ -186,42 +214,58 @@ void bcast(int* buf, int count, int root) {
 
 void allreduce_min_inplace(double* buf, int count) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Allreduce(MPI_IN_PLACE, buf, count, MPI_DOUBLE, MPI_MIN,
-                  MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Allreduce(MPI_IN_PLACE, buf, count, MPI_DOUBLE, MPI_MIN,
+                      MPI_COMM_WORLD);
+        return;
+    }
+#endif
     (void)buf;
     (void)count;
-#endif
 }
 
 void allreduce_max_inplace(double* buf, int count) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Allreduce(MPI_IN_PLACE, buf, count, MPI_DOUBLE, MPI_MAX,
-                  MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Allreduce(MPI_IN_PLACE, buf, count, MPI_DOUBLE, MPI_MAX,
+                      MPI_COMM_WORLD);
+        return;
+    }
+#endif
     (void)buf;
     (void)count;
-#endif
 }
 
 void allreduce_sum(const int* sendbuf, int* recvbuf, int count) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Allreduce(sendbuf, recvbuf, count, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Allreduce(sendbuf, recvbuf, count, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+        return;
+    }
+#endif
     if (sendbuf != recvbuf) {
         std::memcpy(recvbuf, sendbuf, static_cast<size_t>(count) * sizeof(int));
     }
-#endif
 }
 
 void allreduce_sum_inplace(int* buf, int count) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Allreduce(MPI_IN_PLACE, buf, count, MPI_INT, MPI_SUM,
-                  MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Allreduce(MPI_IN_PLACE, buf, count, MPI_INT, MPI_SUM,
+                      MPI_COMM_WORLD);
+        return;
+    }
+#endif
     (void)buf;
     (void)count;
-#endif
 }
 
 // =========================================================================
@@ -231,26 +275,34 @@ void allreduce_sum_inplace(int* buf, int count) {
 void allgather(const double* sendbuf, int sendcount,
                double* recvbuf, int recvcount) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Allgather(sendbuf, sendcount, MPI_DOUBLE,
-                  recvbuf, recvcount, MPI_DOUBLE,
-                  MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Allgather(sendbuf, sendcount, MPI_DOUBLE,
+                      recvbuf, recvcount, MPI_DOUBLE,
+                      MPI_COMM_WORLD);
+        return;
+    }
+#endif
     (void)recvcount;
     std::memcpy(recvbuf, sendbuf, static_cast<size_t>(sendcount) * sizeof(double));
-#endif
 }
 
 void allgatherv(const double* sendbuf, int sendcount,
                 double* recvbuf, const int* recvcounts, const int* displs) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Allgatherv(sendbuf, sendcount, MPI_DOUBLE,
-                   recvbuf, recvcounts, displs, MPI_DOUBLE,
-                   MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Allgatherv(sendbuf, sendcount, MPI_DOUBLE,
+                       recvbuf, recvcounts, displs, MPI_DOUBLE,
+                       MPI_COMM_WORLD);
+        return;
+    }
+#endif
     (void)recvcounts;
     (void)displs;
     std::memcpy(recvbuf, sendbuf, static_cast<size_t>(sendcount) * sizeof(double));
-#endif
 }
 
 // =========================================================================
@@ -281,12 +333,16 @@ int local_rank() {
 
 void bcast(char* buf, int count, int root) {
 #ifdef KRONOS_HAS_MPI
-    MPI_Bcast(buf, count, MPI_CHAR, root, MPI_COMM_WORLD);
-#else
+    int _init = 0;
+    MPI_Initialized(&_init);
+    if (_init) {
+        MPI_Bcast(buf, count, MPI_CHAR, root, MPI_COMM_WORLD);
+        return;
+    }
+#endif
     (void)buf;
     (void)count;
     (void)root;
-#endif
 }
 
 } // namespace kronos::mpi

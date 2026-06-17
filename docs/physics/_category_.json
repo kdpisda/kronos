@@ -1,0 +1,10 @@
+{
+  "label": "Physics & Math",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "title": "KRONOS Physics & Mathematics",
+    "description": "Plane-wave density functional theory: Kohn-Sham equations, Bloch theorem, pseudopotentials, exchange-correlation, density mixing, smearing, forces, stress, symmetry. Rigorous derivations with KaTeX-rendered equations and textbook references.",
+    "slug": "/physics"
+  }
+}

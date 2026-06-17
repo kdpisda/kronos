@@ -1,0 +1,58 @@
+name: Feature request
+description: Propose a new functional, algorithm, backend, or workflow.
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for concrete proposals — "add functional X", "support pseudopotential format Y", "implement algorithm Z".
+        Open-ended discussion ("how should we approach X?") belongs in [Discussions](https://github.com/kdpisda/kronos/discussions).
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Motivation
+      description: |
+        What problem does this solve? What can you not do today?
+        Concrete is better than abstract — a specific calculation that fails is a strong motivation.
+      placeholder: "Calculating phonons via DFPT requires response functions KRONOS doesn't yet compute."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        How would you build this? Reference papers if relevant. If you've identified the source files
+        that would need to change, name them.
+      placeholder: |
+        Implement Sternheimer DFPT solver in `src/solver/dfpt.cpp`. Reuses Davidson infrastructure
+        and the existing perturbed-density update path. See Baroni et al. RMP 73, 515 (2001).
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds you already tried, or competing approaches you ruled out.
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: How blocking is this for your work?
+      options:
+        - "Nice to have"
+        - "I have a workaround but it's painful"
+        - "Blocking my current project"
+        - "Blocking a paper / deadline"
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Links to related issues, PRs, papers, or other codes that implement this.

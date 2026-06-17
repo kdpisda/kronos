@@ -1,0 +1,86 @@
+name: Bug report
+description: Something is wrong — wrong number, crash, build failure, performance regression.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. The more concrete the report, the faster the fix.
+        For general questions, please use [Discussions](https://github.com/kdpisda/kronos/discussions) instead.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences. What happens, and what did you expect to happen instead?
+      placeholder: "Si bulk SCF diverges at ecutwfc=20 Ry; expected convergence in <30 steps."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: |
+        The exact commands you ran. If the input file is small, paste it inline. Otherwise attach it.
+      placeholder: |
+        1. `cmake -B build -S . && cmake --build build -j`
+        2. `./build/src/kronos examples/si_bulk.yaml`
+        3. SCF step 14 reports `dE = NaN`
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: input
+    attributes:
+      label: Minimal YAML input (or link to it)
+      description: The full YAML input, or a stripped-down version that still reproduces the bug.
+      render: yaml
+
+  - type: input
+    id: version
+    attributes:
+      label: KRONOS version / commit
+      description: Output of `git rev-parse --short HEAD` or release tag (e.g., v0.5.1-rc1).
+      placeholder: "v0.5.1-rc1 or 2ca1e60"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: backend
+    attributes:
+      label: GPU backend
+      multiple: false
+      options:
+        - "none (CPU-only)"
+        - "cuda"
+        - "hip"
+        - "metal (Apple Silicon, fp32 dev tier)"
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS / compiler / MPI
+      description: e.g., "Ubuntu 24.04, g++ 13.2, OpenMPI 4.1.6" or "macOS 14.5, AppleClang 16, no MPI".
+      placeholder: "Ubuntu 24.04, g++ 13.2"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output / error log
+      description: |
+        Paste the stderr/stdout from the run. The last ~50 lines are usually enough.
+        If the SCF JSON output exists, include the `"converged": ...` line.
+      render: shell
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Anything else relevant — workarounds you tried, related issues, hardware specifics.

@@ -1,0 +1,33 @@
+name: Question
+description: Ask how to use KRONOS, interpret output, or set up a calculation.
+title: "[question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ⚠️ **Most questions are better off in [GitHub Discussions](https://github.com/kdpisda/kronos/discussions)** — they're searchable, threaded, and other users can help.
+
+        Use this issue template only when the question is tied to a concrete behavior of the code (e.g., "is this the expected output?", "is feature X documented anywhere?"). General "how do I…" questions belong in Discussions.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What are you trying to do and what's blocking you?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: What you've tried
+      description: |
+        Which docs did you check? Which input variations did you try? Linking the relevant doc page
+        helps us improve the documentation.
+
+  - type: input
+    id: version
+    attributes:
+      label: KRONOS version (if relevant)
+      description: Commit or tag — useful when the answer depends on which version you're on.
